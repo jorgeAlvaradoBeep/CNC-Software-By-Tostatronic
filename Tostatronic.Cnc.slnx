@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Tostatronic.Cnc.App/Tostatronic.Cnc.App.csproj" />
+    <Project Path="src/Tostatronic.Cnc.Cam/Tostatronic.Cnc.Cam.csproj" />
     <Project Path="src/Tostatronic.Cnc.Core/Tostatronic.Cnc.Core.csproj" />
   </Folder>
   <Folder Name="/tests/">

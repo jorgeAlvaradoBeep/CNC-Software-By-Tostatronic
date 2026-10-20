@@ -182,10 +182,16 @@ public partial class MainViewModel : ObservableObject
             Filter = "G-code (*.nc;*.gcode;*.ngc;*.tap;*.txt)|*.nc;*.gcode;*.ngc;*.tap;*.txt|Todos (*.*)|*.*",
         };
         if (dlg.ShowDialog() != true) return;
+        LoadProgramFromPath(dlg.FileName);
+    }
+
+    /// <summary>Carga un .nc en la máquina (lo usan el diálogo y la ventana de Gerber).</summary>
+    public void LoadProgramFromPath(string path)
+    {
         try
         {
-            Machine.LoadProgram(dlg.FileName);
-            FileName = Path.GetFileName(dlg.FileName);
+            Machine.LoadProgram(path);
+            FileName = Path.GetFileName(path);
             var p = Machine.Program!;
             FileInfo = $"{p.RawLines.Count} líneas · X {p.MinX:F1}…{p.MaxX:F1} · Y {p.MinY:F1}…{p.MaxY:F1} · Z mín {p.MinZ:F2} mm";
         }

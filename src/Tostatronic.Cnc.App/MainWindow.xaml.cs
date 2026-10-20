@@ -92,6 +92,11 @@ public partial class MainWindow : Window
         _vm.JogRelease(j.Axis);
     }
 
+    private void OpenCam_Click(object sender, RoutedEventArgs e)
+    {
+        new CamWindow(_vm) { Owner = this }.Show();
+    }
+
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
         _vm.Shutdown();

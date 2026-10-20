@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Tostatronic.Cnc.Core\Tostatronic.Cnc.Core.csproj" />
+    <ProjectReference Include="..\..\src\Tostatronic.Cnc.Cam\Tostatronic.Cnc.Cam.csproj" />
   </ItemGroup>
 
 </Project>

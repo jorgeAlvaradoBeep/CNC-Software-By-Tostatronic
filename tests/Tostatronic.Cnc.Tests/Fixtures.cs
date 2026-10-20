@@ -20,4 +20,8 @@ public static class Fixtures
     }
 
     public static string Example(string name) => Path.Combine(ExamplesDir, name);
+
+    /// <summary>Carpeta "examples gerber" del repo.</summary>
+    public static string GerberExample(string name) =>
+        Path.Combine(Path.GetDirectoryName(ExamplesDir)!, "examples gerber", name);
 }

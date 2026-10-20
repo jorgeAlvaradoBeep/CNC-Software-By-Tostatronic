@@ -1,0 +1,155 @@
+<Window x:Class="Tostatronic.Cnc.App.CamWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="PCB desde Gerber — Tostatronic CNC"
+        Width="1150" Height="760" MinWidth="980" MinHeight="620"
+        Background="{StaticResource BgBrush}">
+    <Grid Margin="12">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="330"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- columna de controles -->
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,0,10,0">
+            <StackPanel>
+                <Border Style="{StaticResource PanelStyle}">
+                    <StackPanel>
+                        <TextBlock Text="PLACA" Style="{StaticResource PanelTitle}"/>
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="Abrir ZIP…" Style="{StaticResource AccentButton}" Command="{Binding OpenZipCommand}"/>
+                            <Button Content="Abrir carpeta…" Margin="8,0,0,0" Command="{Binding OpenFolderCommand}"/>
+                        </StackPanel>
+                        <TextBlock Text="{Binding BoardInfo}" TextWrapping="Wrap" Margin="0,8,0,0"
+                                   Foreground="{StaticResource MutedBrush}" FontSize="12"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                            <TextBlock Text="Cara:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <ComboBox Width="190" SelectedIndex="{Binding FaceIndex}">
+                                <ComboBoxItem Content="Inferior (espejo, cobre arriba)"/>
+                                <ComboBoxItem Content="Superior"/>
+                            </ComboBox>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource PanelStyle}" Margin="0,10,0,0">
+                    <StackPanel>
+                        <TextBlock Text="PRESET DE MAQUINADO" Style="{StaticResource PanelTitle}"/>
+                        <ComboBox ItemsSource="{Binding Presets}" SelectedItem="{Binding SelectedPreset}"
+                                  DisplayMemberPath="Name"/>
+                        <Grid Margin="0,10,0,0">
+                            <Grid.Resources>
+                                <Style TargetType="TextBox">
+                                    <Setter Property="Margin" Value="0,2"/>
+                                    <Setter Property="Padding" Value="4,2"/>
+                                    <Setter Property="Background" Value="#1A1B20"/>
+                                    <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+                                    <Setter Property="BorderBrush" Value="#4A4B57"/>
+                                </Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+                                    <Setter Property="VerticalAlignment" Value="Center"/>
+                                    <Setter Property="FontSize" Value="12"/>
+                                </Style>
+                            </Grid.Resources>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="70"/>
+                                <ColumnDefinition Width="12"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="70"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                                <RowDefinition/><RowDefinition/><RowDefinition/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Text="Ancho efectivo (mm)"/>
+                            <TextBox Grid.Column="1" Text="{Binding SelectedPreset.ToolMm}"/>
+                            <TextBlock Grid.Column="3" Text="Profundidad (mm)"/>
+                            <TextBox Grid.Column="4" Text="{Binding SelectedPreset.DepthMm}"/>
+
+                            <TextBlock Grid.Row="1" Text="Pasadas"/>
+                            <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding SelectedPreset.Passes}"/>
+                            <TextBlock Grid.Row="1" Grid.Column="3" Text="Separación (mm)"/>
+                            <TextBox Grid.Row="1" Grid.Column="4" Text="{Binding SelectedPreset.StepMm}"/>
+
+                            <TextBlock Grid.Row="2" Text="Avance (mm/min)"/>
+                            <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding SelectedPreset.FeedMmMin}"/>
+                            <TextBlock Grid.Row="2" Grid.Column="3" Text="Bajada (mm/min)"/>
+                            <TextBox Grid.Row="2" Grid.Column="4" Text="{Binding SelectedPreset.PlungeMmMin}"/>
+
+                            <TextBlock Grid.Row="3" Text="Husillo (rpm)"/>
+                            <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding SelectedPreset.SpindleRpm}"/>
+                            <TextBlock Grid.Row="3" Grid.Column="3" Text="Placa (mm)"/>
+                            <TextBox Grid.Row="3" Grid.Column="4" Text="{Binding SelectedPreset.BoardThicknessMm}"/>
+
+                            <TextBlock Grid.Row="4" Text="F barrenos"/>
+                            <TextBox Grid.Row="4" Grid.Column="1" Text="{Binding SelectedPreset.DrillFeedMmMin}"/>
+                            <CheckBox Grid.Row="4" Grid.Column="3" Content="Broca única (mm):"
+                                      IsChecked="{Binding SelectedPreset.DrillSingleBit}" FontSize="12"/>
+                            <TextBox Grid.Row="4" Grid.Column="4" Text="{Binding SelectedPreset.DrillSingleBitMm}"/>
+
+                            <TextBlock Grid.Row="5" Text="Fresa contorno (mm)"/>
+                            <TextBox Grid.Row="5" Grid.Column="1" Text="{Binding SelectedPreset.ContourToolMm}"/>
+                            <TextBlock Grid.Row="5" Grid.Column="3" Text="Pasada contorno (mm)"/>
+                            <TextBox Grid.Row="5" Grid.Column="4" Text="{Binding SelectedPreset.ContourStepMm}"/>
+
+                            <TextBlock Grid.Row="6" Text="F contorno"/>
+                            <TextBox Grid.Row="6" Grid.Column="1" Text="{Binding SelectedPreset.ContourFeedMmMin}"/>
+                        </Grid>
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <Button Content="⚙ GENERAR" Style="{StaticResource AccentButton}" Height="34"
+                                    Command="{Binding GenerateCommand}" IsEnabled="{Binding HasBoard}"/>
+                            <Button Content="Guardar presets" Margin="8,0,0,0" Command="{Binding SavePresetsCommand}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource PanelStyle}" Margin="0,10,0,0">
+                    <StackPanel>
+                        <TextBlock Text="ARCHIVOS .NC" Style="{StaticResource PanelTitle}"/>
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Content="…" Width="30" Command="{Binding PickOutputFolderCommand}"/>
+                            <TextBox Text="{Binding OutputFolder, UpdateSourceTrigger=PropertyChanged}" Padding="4,4" Margin="0,0,6,0"
+                                     Background="#1A1B20" Foreground="{StaticResource TextBrush}" BorderBrush="#4A4B57"/>
+                        </DockPanel>
+                        <Button Content="💾 Guardar archivos" Margin="0,8,0,0" Height="34"
+                                Command="{Binding SaveFilesCommand}" IsEnabled="{Binding HasBoard}"/>
+                        <ListBox ItemsSource="{Binding GeneratedFiles}" SelectedItem="{Binding SelectedFile}"
+                                 MaxHeight="110" Margin="0,8,0,0" Background="#141519"
+                                 Foreground="#C9CAD3" BorderThickness="0" FontSize="11" FontFamily="Consolas"/>
+                        <Button Content="▶ Cargar el seleccionado en la máquina" Margin="0,8,0,0" Height="34"
+                                Style="{StaticResource AccentButton}" Command="{Binding LoadIntoMachineCommand}"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- vista previa -->
+        <Border Grid.Column="1" Style="{StaticResource PanelStyle}">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Top" Text="VISTA PREVIA (como se ve sobre la CNC)" Style="{StaticResource PanelTitle}"/>
+                <TextBlock DockPanel.Dock="Bottom" Text="{Binding ResultInfo}" Foreground="{StaticResource MutedBrush}"
+                           FontSize="12" Margin="0,8,0,0"/>
+                <TextBlock DockPanel.Dock="Bottom" Text="{Binding WarningsText}" Foreground="{StaticResource WarnBrush}"
+                           FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding WarningsText}" Value="">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+                <Border Background="#101216" CornerRadius="6" ClipToBounds="True">
+                    <Viewbox Stretch="Uniform" Margin="10">
+                        <Canvas x:Name="PreviewCanvas"/>
+                    </Viewbox>
+                </Border>
+            </DockPanel>
+        </Border>
+    </Grid>
+</Window>

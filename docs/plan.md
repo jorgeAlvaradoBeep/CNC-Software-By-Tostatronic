@@ -73,18 +73,28 @@ Así el repaso, las dos caras y el G-code externo reciben exactamente el mismo t
 - Prueba contigo: placa real con auto level, comparar contra el resultado de Wegstr y verificar
   el signo de Z.
 
-### Fase C — Gerber/Excellon → trayectorias de una cara
-- Carga del ZIP de EasyEDA (o archivos sueltos): cobre superior/inferior, contorno, Excellon.
-- Aislamiento sobre la **unión de todo el cobre** (Clipper2), N pasadas separadas `step`,
-  ordenamiento por cercanía, aviso si la separación mínima entre redes < ancho efectivo.
-- Barrenos (broca única 1.0 mm o agrupados), contorno por fuera con pasadas de 0.3 mm.
-- Origen X0 Y0 esquina inferior izquierda **vista desde el cobre fresado** (cara inferior en
-  espejo X), Z0 en el cobre. Vista previa 2D completa (cobre, pasadas, barrenos, contorno, origen).
-- Trabajos separados con cambio de herramienta guiado y re-sondeo de Z entre trabajos.
-- **Pruebas contra tus scripts**: mismos datos de entrada → comparar geometría de pasadas y
-  G-code con la salida de `pcb_cnc.py` (tolerancia numérica).
-- Presets editables (JSON): "V 0.3 mm probado" como default, V 0.2 y V 0.1 seleccionables, y
-  todos los parámetros de tu tabla.
+### Fase C — Gerber/Excellon → trayectorias de una cara ✅ (implementada 2026-10-20; falta validar con un ZIP real de EasyEDA)
+- Entrada: **el ZIP de fabricación estándar** (Gerber RS-274X + Excellon) que EasyEDA exporta
+  con un clic — ya no hace falta el truco de la consola F12 de `pcb_cnc.py`. Parser propio de
+  Gerber (FS/MO, aperturas C/R/O/P y macros AM con variables y aritmética, trazos, arcos G75,
+  regiones G36/G37, polaridad LPD/LPC) y de Excellon; capas detectadas por nombre
+  (.GBL/.GTL/.GKO/.DRL); contorno encadenado de los trazos de la capa de contorno.
+- Aislamiento sobre la **unión de todo el cobre** (Clipper2), N pasadas separadas `step`
+  (offsets redondos + simplificación 0.01 mm, como los buffers de shapely del script),
+  ordenamiento por cercanía (mejora: cada anillo arranca en su vértice más cercano), **aviso
+  cuando dos redes están más cerca que el ancho efectivo** (el aislamiento no las separaría).
+- Barrenos agrupados 0.8/1.0/1.2 como el script, o broca única configurable; contorno por
+  fuera con pasadas de 0.3 mm, sin pestañas.
+- Origen X0 Y0 esquina inferior izquierda **vista desde el cobre** (cara inferior en espejo X),
+  Z0 en el cobre. Vista previa 2D (cobre, pasadas al ancho real de la herramienta, barrenos,
+  contorno, origen). G-code con el mismo formato/encabezados de `pcb_cnc.py`.
+- Presets editables (JSON en %APPDATA%): "V-bit 0.3 (efectivo 0.2) — probado" default, 0.3 y
+  0.1 seleccionables, con todos los parámetros de la tabla.
+- Ventana "PCB desde Gerber" en la app: cargar ZIP/carpeta, elegir cara, editar preset,
+  vista previa, guardar los .nc y cargar el elegido directo a la máquina.
+- Fixture de demostración en `examples gerber/Gerber_Demo_DIP8.zip` (DIP-8 con pistas).
+- Pendiente: validar contra un ZIP real exportado de EasyEDA Std (ajustar quirks si los hay)
+  y el cambio de herramienta guiado entre trabajos (hoy son archivos separados, como el script).
 
 ### Fase D — Dos caras con pines de calibración
 - 4 barrenos de calibración en la cara 1 (de montaje del diseño o elegidos en la vista previa),
