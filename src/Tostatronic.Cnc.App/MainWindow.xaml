@@ -195,6 +195,24 @@
                         <Button Content="⟲ Reiniciar" Width="100" Height="46" Margin="10,0,0,0" Command="{Binding RewindCommand}"/>
                     </StackPanel>
 
+                    <!-- calibración de altura -->
+                    <Border DockPanel.Dock="Top" BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="0,1,0,0"
+                            Margin="0,16,0,0" Padding="0,10,0,0">
+                        <StackPanel>
+                            <TextBlock Text="CALIBRACIÓN DE ALTURA" Style="{StaticResource PanelTitle}"/>
+                            <StackPanel Orientation="Horizontal">
+                                <Button Content="📐 CALIBRAR ALTURA" Height="36" Command="{Binding AutoLevelCommand}"
+                                        IsEnabled="{Binding IsCalibrating, Converter={StaticResource Inverse}}"/>
+                                <CheckBox Content="Aplicar al trabajo" Margin="14,0,0,0"
+                                          IsChecked="{Binding ApplyLeveling}"/>
+                                <TextBlock Text="{Binding LevelingText}" Margin="14,0,0,0" VerticalAlignment="Center"
+                                           Foreground="{StaticResource AccentBrush}" FontFamily="Consolas"/>
+                            </StackPanel>
+                            <TextBlock Margin="0,6,0,0" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap"
+                                       Text="Sondea la placa sobre las trayectorias de corte del G-code cargado (pinza de la sonda al cobre). Deja Z a pocos mm de la superficie: la sonda baja máximo 10 mm por punto. El contacto en X0 Y0 redefine Z0."/>
+                        </StackPanel>
+                    </Border>
+
                     <!-- aviso -->
                     <Border DockPanel.Dock="Top" Background="#4A3215" BorderBrush="{StaticResource WarnBrush}" BorderThickness="1"
                             CornerRadius="6" Padding="10,6" Margin="0,16,0,0">

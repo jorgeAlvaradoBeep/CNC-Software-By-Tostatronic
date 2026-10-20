@@ -4,7 +4,7 @@
 
 Hecho en C# (.NET 8 + WPF), con interfaz en español. Nace de la necesidad de un flujo completo en un solo programa: controlar la máquina, mandar G-code con calibración de altura estilo Wegstr y, en fases siguientes, generar las trayectorias directamente desde los Gerber/Excellon de EasyEDA — incluyendo placas de dos caras con pines de calibración.
 
-> ⚠️ **Proyecto en desarrollo activo.** Hoy está completa la **Fase A** (control de máquina y envío de G-code, con modo simulación). Ver el [plan por fases](docs/plan.md).
+> ⚠️ **Proyecto en desarrollo activo.** Hoy están completas las **Fases A y B** (control de máquina, envío de G-code y calibración de altura, con modo simulación); la Fase B aún está pendiente de validarse con la máquina real. Ver el [plan por fases](docs/plan.md).
 
 ## ¿Por qué?
 
@@ -19,7 +19,7 @@ La Wegstr es una CNC excelente para PCB, pero su software es cerrado y no genera
 
 La máquina **no habla GRBL**: usa un protocolo binario propio a 9600 baudios donde la PC manda ráfagas de micro-movimientos en pasos de motor (0.004 mm/paso) y la máquina contesta un byte de estado — incluido el toque de la sonda de Z, con el que hace su calibración de altura punto por punto sobre las pistas. El análisis completo (formato de paquetes, respuestas, control de flujo, autonivelación, G-code soportado) está en [`docs/wegstr-analisis.md`](docs/wegstr-analisis.md).
 
-## Características (Fase A)
+## Características (Fases A y B)
 
 - **Conexión**: detección automática del puerto (CH340), keep-alive, consola con tráfico TX/RX opcional.
 - **Control manual**: jog continuo con rampa de aceleración o por pasos fijos; también con teclado (flechas y Re Pág/Av Pág); velocidad ajustable en vivo (10–100 %).
@@ -30,7 +30,8 @@ La máquina **no habla GRBL**: usa un protocolo binario propio a 9600 baudios do
 - **Pausa / reanudar / parada**: si mueves la máquina durante la pausa, al reanudar regresa primero en XY y luego en Z; un timeout de comunicación deja el trabajo en pausa reanudable, no lo pierde.
 - **Cambio de herramienta guiado** (M6 + M0).
 - **Paro de emergencia** siempre visible: corta el flujo de paquetes (la máquina termina a lo más ~0.17 mm) y apaga el husillo. *El botón físico del equipo sigue siendo el paro duro.*
-- **Modo simulación**: un firmware falso ejecuta los paquetes a la cadencia real, con placa simulada y sonda funcional, para probar todo sin hardware.
+- **Calibración de altura (auto level) estilo Wegstr**: con el G-code cargado, sondea la placa **sobre las trayectorias de corte reales** (rejilla de 1 mm sobre las pistas, no una malla ciega), toma la referencia en X0 Y0 y durante el trabajo ajusta Z celda a celda (±1 paso por comando en cortes, desnivel completo en las bajadas, compensación de backlash de Z). El mapa se guarda junto al G-code (`.nivel.json`).
+- **Modo simulación**: un firmware falso ejecuta los paquetes a la cadencia real, con placa simulada (ligeramente inclinada, para que la calibración tenga algo que medir) y sonda funcional, para probar todo sin hardware.
 
 ## Compilar y correr
 
@@ -48,7 +49,7 @@ Pruebas:
 dotnet test
 ```
 
-Primer vuelo sin máquina: marca **“Simulación (sin máquina)”**, pulsa **Conectar**, baja Z con el jog hasta el toque (la placa simulada está 5 mm abajo) y carga un `.nc` de [`examples gcode/`](examples%20gcode/).
+Primer vuelo sin máquina: marca **“Simulación (sin máquina)”**, pulsa **Conectar**, baja Z con el jog hasta el toque (la placa simulada está 5 mm abajo), carga un `.nc` de [`examples gcode/`](examples%20gcode/) y pulsa **CALIBRAR ALTURA**: verás a la "máquina" sondear las pistas y medir la inclinación de la placa simulada antes de correr el trabajo compensado.
 
 ## Estructura
 
@@ -66,7 +67,7 @@ examples gcode/            G-code real de PCB fabricadas con este flujo
 | Fase | Contenido | Estado |
 |---|---|---|
 | A | Conexión, jog, ceros, husillo, envío de G-code, simulador | ✅ |
-| B | Calibración de altura estilo Wegstr (sondeo sobre las pistas) | ⏳ |
+| B | Calibración de altura estilo Wegstr (sondeo sobre las pistas) | ✅ |
 | C | Gerber/Excellon (EasyEDA) → aislamiento, barrenos y contorno, vista previa 2D | ⏳ |
 | D | Dos caras con pines de calibración (asistente de volteo, ajuste por mínimos cuadrados) | ⏳ |
 | E | Repaso por zona y comodidades | ⏳ |

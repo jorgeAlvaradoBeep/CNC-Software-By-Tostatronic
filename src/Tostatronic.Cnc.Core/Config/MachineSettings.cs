@@ -24,6 +24,21 @@ public sealed class MachineSettings
     /// <summary>Encender el husillo automáticamente al iniciar un trabajo.</summary>
     public bool AutoSpindle { get; set; } = false;
 
+    /// <summary>Tamaño de celda de la rejilla del auto level, en mm (0.5–70, default 1.0).</summary>
+    public double AutoLevelRasterMm { get; set; } = 1.0;
+
+    /// <summary>Altura segura entre sondeos, en mm (0.1–40; con traslados ≥ 10 mm se usa mínimo 2.0).</summary>
+    public double AutoLevelSafeZMm { get; set; } = 1.0;
+
+    /// <summary>Compensación del juego (backlash) del husillo de Z al invertir el ajuste, en pasos (0–30, default 4 = 0.016 mm).</summary>
+    public int AutoLevelZBacklashSteps { get; set; } = 4;
+
+    /// <summary>
+    /// Sentido del conteo de Z que reporta el firmware en el toque de sonda (docs/wegstr-analisis.md §8).
+    /// Si al calibrar una placa inclinada las diferencias salen con el signo invertido, activar esto.
+    /// </summary>
+    public bool ProbeZReportInverted { get; set; } = false;
+
     public int StepsPer10mm(Axis axis) => axis switch
     {
         Axis.X => StepsPer10mmX,

@@ -61,12 +61,17 @@ Así el repaso, las dos caras y el G-code externo reciben exactamente el mismo t
   (con retorno a posición pausada), M0/M6 guiados.
 - Prueba contigo: mover la máquina, Z0 por toque, correr un .nc de tus scripts.
 
-### Fase B — Calibración de altura
-- Rejilla sobre trayectorias (raster configurable, default 1.0 mm), sondeo, mapa de alturas,
-  aplicación con rampa y backlash. Verificación del signo de Z del firmware (prueba guiada).
-- Guardar/cargar el mapa por placa y por cara (archivo de sesión JSON junto al proyecto).
-- Vista del mapa medido (colores sobre la vista previa) y error por punto.
-- Prueba contigo: placa real con auto level, comparar contra el resultado de Wegstr.
+### Fase B — Calibración de altura ✅ (implementada 2026-10-20; falta probar en hardware)
+- Rejilla sobre trayectorias (raster configurable, default 1.0 mm), sondeo en el orden del
+  recorrido con referencia en X0 Y0 (el contacto redefine Z0), mapa de alturas, aplicación con
+  rampa de ±1 paso + desnivel completo en plunges + backlash de Z configurable.
+- Guardar/cargar el mapa junto al G-code (`archivo.nc.nivel.json`); al recargar se ofrece pero
+  no se aplica solo (solo vale con los mismos ceros).
+- Ajuste `ProbeZReportInverted` para el signo del conteo Z del firmware (incertidumbre §8 del
+  análisis): si en una placa inclinada las diffs salen al revés, se activa.
+- Pendiente (se movió a Fase C, donde nace la vista previa 2D): vista del mapa medido en colores.
+- Prueba contigo: placa real con auto level, comparar contra el resultado de Wegstr y verificar
+  el signo de Z.
 
 ### Fase C — Gerber/Excellon → trayectorias de una cara
 - Carga del ZIP de EasyEDA (o archivos sueltos): cobre superior/inferior, contorno, Excellon.

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Tostatronic.Cnc.Core.GCode;
+using Tostatronic.Cnc.Core.Leveling;
 using Tostatronic.Cnc.Core.Motion;
 using Tostatronic.Cnc.Core.Protocol;
 
@@ -26,10 +27,16 @@ public sealed class JobRunner
     private readonly List<StepCommand> _buffer = new(3);
     private readonly Stopwatch _elapsed = new();
 
-    private StepPosition _gen;           // posición generada (los contadores van 1 paquete atrás)
+    private StepPosition _gen;           // posición NOMINAL generada (sin compensación de altura)
     private double _feed = 170.0;        // F modal, como Wegstr
     private string _lastCommand = "";
     private bool _programSpindle;        // lo que el G-code quiere del husillo (M3/M5)
+
+    // compensación de altura: extras de Z por comando en el buffer y total ya confirmado,
+    // para poder convertir entre posición nominal y posición de máquina (contadores)
+    private LevelingCompensator? _lev;
+    private readonly List<int> _bufferExtras = new(3);
+    private long _ackedExtraZ;
 
     private volatile bool _pauseRequested;
     private volatile bool _stopRequested;
@@ -62,6 +69,7 @@ public sealed class JobRunner
         // el que llama ya adquirió la actividad del controlador
         _holdsActivity = true;
         _gen = _m.Position;
+        _lev = _m.CreateCompensatorForJob();
         _task = Task.Run(() => RunAsync(_m.EstopToken));
     }
 
@@ -101,6 +109,8 @@ public sealed class JobRunner
         _elapsed.Start();
         try
         {
+            if (_lev != null)
+                _m.RaiseLog($"Calibración de altura aplicada al trabajo ({_lev.PointCount} puntos).");
             if (_m.Settings.AutoSpindle)
             {
                 _m.SetSpindleFlag(true);
@@ -181,7 +191,7 @@ public sealed class JobRunner
                 {
                     advance = () => SpeedModel.CuttingAdvance(_feed, _m.SpeedPercent);
                 }
-                await MoveToAsync(target, advance, estop).ConfigureAwait(false);
+                await MoveToAsync(target, advance, cutting: line.Command == "G01", estop).ConfigureAwait(false);
                 break;
             }
             case "G02":
@@ -202,7 +212,7 @@ public sealed class JobRunner
                         _m.Settings.StepsFromMm(Axis.X, points[k].X),
                         _m.Settings.StepsFromMm(Axis.Y, points[k].Y),
                         _m.Settings.StepsFromMm(Axis.Z, zk));
-                    await MoveToAsync(target, advance, estop).ConfigureAwait(false);
+                    await MoveToAsync(target, advance, cutting: true, estop).ConfigureAwait(false);
                 }
                 break;
             }
@@ -268,14 +278,16 @@ public sealed class JobRunner
     /// <summary>
     /// Mueve hasta el objetivo con pausa entre paquetes; si la máquina no responde o se
     /// interrumpe (botón/sobrecarga), queda en pausa/detenido y al reanudar replanifica
-    /// desde la posición real.
+    /// desde la posición real. En movimientos de corte aplica la compensación de altura:
+    /// ±1 paso por comando en cortes XY, completa en bajadas puras de Z (plunge).
     /// </summary>
-    private async Task MoveToAsync(StepPosition target, Func<double> advance, CancellationToken estop)
+    private async Task MoveToAsync(StepPosition target, Func<double> advance, bool cutting, CancellationToken estop)
     {
         while (true)
         {
             try
             {
+                bool plunge = target.X == _gen.X && target.Y == _gen.Y;
                 foreach (var cmd in _planner.Linear(_gen, target, advance, SpindleFlag))
                 {
                     if (_pauseRequested || _stopRequested)
@@ -284,31 +296,57 @@ public sealed class JobRunner
                         // tras regresar a la posición pausada se sigue con el mismo tramo
                     }
                     _gen = new StepPosition(_gen.X + cmd.Dx, _gen.Y + cmd.Dy, _gen.Z + cmd.Dz);
-                    await AddCommandAsync(cmd, estop).ConfigureAwait(false);
+                    var send = cmd;
+                    int extra = 0;
+                    if (cutting && _lev != null)
+                    {
+                        extra = _lev.Extra(_gen.X, _gen.Y, cmd.Dz, rampStep: !plunge);
+                        if (extra != 0)
+                            send = cmd with { Dz = cmd.Dz + extra };
+                    }
+                    await AddCommandAsync(send, extra, estop).ConfigureAwait(false);
                 }
                 return;
             }
             catch (MachineTimeoutException)
             {
-                _buffer.Clear();
+                DropBuffer();
                 _m.RaiseWarning("La máquina no envió la señal; el trabajo queda en pausa. Revisa la conexión y reanuda.");
-                _gen = _m.Position;
+                _gen = NominalFromMachine(_m.Position);
                 await PausePointAsync(estop, flush: false).ConfigureAwait(false);
             }
             catch (JobInterruptedException ex)
             {
-                _buffer.Clear();
+                DropBuffer();
                 _m.RaiseWarning(ex.Message);
-                _gen = _m.Position;
+                _gen = NominalFromMachine(_m.Position);
                 _stopRequested = true;
                 await PausePointAsync(estop, flush: false).ConfigureAwait(false);
             }
         }
     }
 
-    private async Task AddCommandAsync(StepCommand cmd, CancellationToken estop)
+    /// <summary>Posición nominal (del programa) que corresponde a una posición de máquina.</summary>
+    private StepPosition NominalFromMachine(StepPosition machine) =>
+        machine with { Z = machine.Z - _ackedExtraZ };
+
+    /// <summary>Descarta los comandos no confirmados y regresa sus extras de Z a pendientes.</summary>
+    private void DropBuffer()
+    {
+        if (_lev != null)
+        {
+            long sum = 0;
+            foreach (int e in _bufferExtras) sum += e;
+            _lev.ReturnUnsent(sum);
+        }
+        _buffer.Clear();
+        _bufferExtras.Clear();
+    }
+
+    private async Task AddCommandAsync(StepCommand cmd, int extraZ, CancellationToken estop)
     {
         _buffer.Add(cmd);
+        _bufferExtras.Add(extraZ);
         if (_buffer.Count == 3)
             await SendBufferAsync(estop).ConfigureAwait(false);
     }
@@ -317,7 +355,10 @@ public sealed class JobRunner
     {
         if (_buffer.Count == 0) return;
         while (_buffer.Count < 3)
+        {
             _buffer.Add(new StepCommand(0, 0, 0, SpindleFlag()));
+            _bufferExtras.Add(0);
+        }
         await SendBufferAsync(estop).ConfigureAwait(false);
     }
 
@@ -325,6 +366,16 @@ public sealed class JobRunner
     {
         var reply = await _m.SendMoveInternalAsync(PacketEncoder.MoveHeader, _buffer, estop).ConfigureAwait(false);
         _buffer.Clear();
+        if (reply.Kind is MachineNotification.Ack or MachineNotification.ProbeTouch)
+        {
+            foreach (int e in _bufferExtras) _ackedExtraZ += e;
+            _bufferExtras.Clear();
+        }
+        else
+        {
+            // la máquina no ejecutó el paquete: los extras vuelven a pendientes
+            DropBuffer();
+        }
         if (reply.Kind == MachineNotification.Released)
             throw new JobInterruptedException("Máquina liberada con el botón físico; trabajo detenido.");
         if (reply.Kind == MachineNotification.SpindleOverload)
@@ -400,7 +451,7 @@ public sealed class JobRunner
             var r1 = await _m.PlannedMoveAsync(xy, PacketEncoder.MoveHeader, estop).ConfigureAwait(false);
             if (r1 == null)
                 await _m.PlannedMoveAsync(pausedAt, PacketEncoder.MoveHeader, estop).ConfigureAwait(false);
-            _gen = _m.Position;
+            _gen = NominalFromMachine(_m.Position);
             _planner.Reset();
         }
 

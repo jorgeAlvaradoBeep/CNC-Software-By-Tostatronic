@@ -41,6 +41,9 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private bool detailedLog;
     [ObservableProperty] private string lastWarning = "";
     [ObservableProperty] private bool probeLatch;
+    [ObservableProperty] private string levelingText = "sin calibrar";
+    [ObservableProperty] private bool applyLeveling;
+    [ObservableProperty] private bool isCalibrating;
 
     /// <summary>Paso del jog en mm; null = jog continuo.</summary>
     public double? JogStepMm { get; set; }
@@ -59,6 +62,8 @@ public partial class MainViewModel : ObservableObject
             if (DetailedLog)
                 AddConsole((outgoing ? "TX " : "RX ") + BitConverter.ToString(data));
         };
+        Machine.LevelingProgress += (done, total, mm) => _dispatcher.BeginInvoke(() =>
+            LevelingText = $"sondeo {done}/{total} · {mm:+0.000;-0.000} mm");
 
         _uiTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromMilliseconds(250) };
         _uiTimer.Tick += (_, _) => RefreshJobInfo();
@@ -76,6 +81,8 @@ public partial class MainViewModel : ObservableObject
     }
 
     partial void OnSimulationModeChanged(bool value) => Machine.SimulationMode = value;
+
+    partial void OnApplyLevelingChanged(bool value) => Machine.ApplyLeveling = value;
 
     private void AddConsole(string msg)
     {
@@ -100,6 +107,12 @@ public partial class MainViewModel : ObservableObject
         ZText = Machine.Zmm.ToString("+0.000;-0.000");
         SpindleOn = Machine.SpindleOn;
         ProbeLatch = Machine.ProbeLatch;
+        IsCalibrating = Machine.Status == MachineStatus.Calibrando;
+        ApplyLeveling = Machine.ApplyLeveling;
+        if (!IsCalibrating)
+            LevelingText = Machine.Leveling is { HasOffsets: true } lv
+                ? $"{lv.OffsetCount} puntos · {lv.MinOffsetMm:+0.000;-0.000} … {lv.MaxOffsetMm:+0.000;-0.000} mm"
+                : "sin calibrar";
         RefreshJobInfo();
     }
 
@@ -183,6 +196,7 @@ public partial class MainViewModel : ObservableObject
         }
     }
 
+    [RelayCommand] private async Task AutoLevelAsync() => await Machine.AutoLevelAsync();
     [RelayCommand] private void Start() => Machine.StartOrResumeJob();
     [RelayCommand] private void Pause() => Machine.PauseJob();
     [RelayCommand] private void StopJob() => Machine.StopJob();

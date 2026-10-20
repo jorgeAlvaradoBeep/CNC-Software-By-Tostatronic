@@ -12,6 +12,7 @@ public enum MachineStatus
     Regresando,
     YendoACero,
     EsperandoHerramienta,
+    Calibrando,
 }
 
 public static class MachineStatusExtensions
@@ -28,6 +29,7 @@ public static class MachineStatusExtensions
         MachineStatus.Regresando => "regresando a la posición",
         MachineStatus.YendoACero => "yendo al cero",
         MachineStatus.EsperandoHerramienta => "cambio de herramienta",
+        MachineStatus.Calibrando => "calibrando altura",
         _ => s.ToString(),
     };
 }
