@@ -93,8 +93,14 @@ Así el repaso, las dos caras y el G-code externo reciben exactamente el mismo t
 - Ventana "PCB desde Gerber" en la app: cargar ZIP/carpeta, elegir cara, editar preset,
   vista previa, guardar los .nc y cargar el elegido directo a la máquina.
 - Fixture de demostración en `examples gerber/Gerber_Demo_DIP8.zip` (DIP-8 con pistas).
-- Pendiente: validar contra un ZIP real exportado de EasyEDA Std (ajustar quirks si los hay)
-  y el cambio de herramienta guiado entre trabajos (hoy son archivos separados, como el script).
+- Validado (2026-10-20) contra una exportación real de EasyEDA Std v6.5.22 (placa pública de
+  GitHub): formato 4.5, regiones G36/G37, polaridad LPC, contorno con muesca, dos Excellon
+  (PTH y vías) en `METRIC,LZ,000.000`. Quirks corregidos: los pads ovalados vienen como slots
+  G85 de 0.006 mm (ahora un solo barreno en el centro) y la semántica LZ/TZ estaba invertida
+  (solo afectaba a Excellon de otros CAD con ceros suprimidos). La prueba
+  `CargaUnZipConLaEstructuraDeEasyEdaStd` reproduce esa estructura con geometría propia.
+- Pendiente: probar en la máquina; el cambio de herramienta guiado entre trabajos (hoy son
+  archivos separados, como el script); zoom/pan en la vista previa; mapa de alturas en colores.
 
 ### Fase D — Dos caras con pines de calibración
 - 4 barrenos de calibración en la cara 1 (de montaje del diseño o elegidos en la vista previa),

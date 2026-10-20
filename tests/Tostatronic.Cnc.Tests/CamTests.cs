@@ -210,6 +210,76 @@ public class ExcellonParserTests
     }
 
     [Fact]
+    public void LZRellenaCerosALaDerechaYTZNo()
+    {
+        // LZ: los ceros a la izquierda están, pueden faltar los de la derecha
+        var lz = ExcellonParser.Parse("""
+            M48
+            METRIC,LZ,000.000
+            T01C1.000
+            %
+            T01
+            X02025Y01
+            M30
+            """);
+        Assert.Equal(20.25, lz[0].X, 3);
+        Assert.Equal(10.0, lz[0].Y, 3);
+
+        // TZ: los ceros a la derecha están, pueden faltar los de la izquierda (KiCad)
+        var tz = ExcellonParser.Parse("""
+            M48
+            METRIC,TZ
+            T01C1.000
+            %
+            T01
+            X20251Y846
+            M30
+            """);
+        Assert.Equal(20.251, tz[0].X, 3);
+        Assert.Equal(0.846, tz[0].Y, 3);
+    }
+
+    [Fact]
+    public void ComentarioFileFormatDefineLosDigitos()
+    {
+        var holes = ExcellonParser.Parse("""
+            M48
+            METRIC,LZ
+            ;FILE_FORMAT=4:2
+            T01C1.000
+            %
+            T01
+            X000838Y001562
+            M30
+            """);
+        Assert.Equal(8.38, holes[0].X, 3);
+        Assert.Equal(15.62, holes[0].Y, 3);
+    }
+
+    [Fact]
+    public void SlotCortoEsUnBarrenoEnElCentroYLargoSonDos()
+    {
+        var warnings = new List<string>();
+        var holes = ExcellonParser.Parse("""
+            M48
+            METRIC,LZ,000.000
+            T01C1.016
+            %
+            T01
+            X031112Y060071G85X031118Y060071
+            X010000Y010000G85X015000Y010000
+            M30
+            """, warnings);
+        Assert.Equal(3, holes.Count);
+        Assert.Equal(31.115, holes[0].X, 3); // pad ovalado de EasyEDA: slot de 0.006 mm → centro
+        Assert.Equal(60.071, holes[0].Y, 3);
+        Assert.Equal(10.0, holes[1].X, 3);   // slot de 5 mm → un barreno en cada extremo
+        Assert.Equal(15.0, holes[2].X, 3);
+        Assert.Single(warnings);
+        Assert.Contains("más largo", warnings[0]);
+    }
+
+    [Fact]
     public void FormatoEnPulgadas()
     {
         var holes = ExcellonParser.Parse("""
@@ -460,6 +530,190 @@ public class CamGenerationTests
         Assert.Equal(2, r.DrillGroups[1.0].Count);
         foreach (var (name, content) in r.Files)
             Assert.True(GCodeProgram.FromText(content, name).Lines.Count > 5);
+    }
+
+    // ---- ZIP con la estructura exacta que exporta EasyEDA Std v6.5 (validada contra una
+    //      exportación real el 2026-10-20): comentarios G04, FSLAX45Y45, líneas en blanco,
+    //      %LPD*%, regiones G36 + %LPC*%, máscaras/serigrafía/capa interna que hay que ignorar,
+    //      Excellon METRIC,LZ,000.000 con ;FILE_FORMAT, G05/G90, pads ovalados como slots G85
+    //      de 0.006 mm y archivo aparte de vías. Geometría propia (placa 20 × 15 mm en 5.588, 50.8).
+
+    private const string EasyHeader = """
+        G04 Layer: {0}*
+        G04 EasyEDA v6.5.22, 2023-01-21 22:26:58*
+        G04 Gerber Generator version 0.2*
+        G04 Scale: 100 percent, Rotated: No, Reflected: No *
+        G04 Dimensions in millimeters *
+        G04 leading zeros omitted , absolute positions ,4 integer and 5 decimal *
+        %FSLAX45Y45*%
+        %MOMM*%
+
+        """;
+
+    private static string Easy(string layer, string body) => string.Format(EasyHeader, layer) + body;
+
+    private const string EasyGko = """
+        %ADD10C,0.2540*%
+        D10*
+        X558800Y5080000D02*
+        G01*
+        X2558800Y5080000D01*
+        X2558800Y6580000D01*
+        X558800Y6580000D01*
+        X558800Y5080000D01*
+
+        %LPD*%
+        M02*
+        """;
+
+    private const string EasyGbl = """
+        %ADD10C,0.5000*%
+        %ADD11O,1.7500092X1.1999976*%
+        %ADD12R,1.5240X1.5240*%
+        %ADD13C,1.8000*%
+
+        %LPD*%
+        D10*
+        X800000Y5500000D02*
+        G01*
+        X1800000Y5500000D01*
+        D11*
+        X800000Y5500000D03*
+        D12*
+        X1800000Y5500000D03*
+        D13*
+        X2200000Y6000000D03*
+        M02*
+        """;
+
+    private const string EasyGtl = """
+        %ADD10C,1.0000*%
+        %ADD11C,1.8000*%
+
+        %LPD*%
+        G36*
+        X1000000Y5800000D02*
+        G01*
+        X1400000Y5800000D01*
+        X1400000Y6200000D01*
+        X1000000Y6200000D01*
+        X1000000Y5800000D01*
+        G37*
+        %LPC*%
+        D10*
+        X1200000Y6000000D03*
+        %LPD*%
+        D11*
+        X2200000Y6000000D03*
+        M02*
+        """;
+
+    private const string EasyGts = """
+        %ADD10C,9.0000*%
+        D10*
+        X1500000Y5800000D03*
+        M02*
+        """;
+
+    private const string EasyDrl = """
+        M48
+        METRIC,LZ,000.000
+        ;FILE_FORMAT=3:3
+        ;TYPE=PLATED
+        ;Layer: PTH_Through
+        ;EasyEDA v6.5.22, 2023-01-21 22:26:58
+        ;Gerber Generator version 0.2
+        ;Holesize 1 = 1.016 mm
+        T01C1.016
+        ;Holesize 2 = 1.200 mm
+        T02C1.200
+        %
+        G05
+        G90
+        T01
+        X008000Y055000G85X008006Y055000
+        X018000Y055000
+        T02
+        X022000Y060000
+        M30
+        """;
+
+    private const string EasyDrlVia = """
+        M48
+        METRIC,LZ,000.000
+        ;FILE_FORMAT=3:3
+        ;TYPE=PLATED
+        ;Layer: PTH_Through_Via
+        ;Holesize 1 = 0.306 mm
+        T01C0.306
+        %
+        G05
+        G90
+        T01
+        X012000Y060000
+        M30
+        """;
+
+    [Fact]
+    public void CargaUnZipConLaEstructuraDeEasyEdaStd()
+    {
+        string zip = MakeZip(
+            ("Gerber_BoardOutlineLayer.GKO", Easy("BoardOutlineLayer", EasyGko)),
+            ("Gerber_BottomLayer.GBL", Easy("BottomLayer", EasyGbl)),
+            ("Gerber_TopLayer.GTL", Easy("TopLayer", EasyGtl)),
+            ("Gerber_TopSolderMaskLayer.GTS", Easy("TopSolderMaskLayer", EasyGts)),
+            ("Gerber_BottomSolderMaskLayer.GBS", Easy("BottomSolderMaskLayer", EasyGts)),
+            ("Gerber_TopSilkscreenLayer.GTO", Easy("TopSilkscreenLayer", EasyGts)),
+            ("Gerber_TopPasteMaskLayer.GTP", Easy("TopPasteMaskLayer", EasyGts)),
+            ("Gerber_InnerLayer21.G21", Easy("InnerLayer21", "M02*\n")),
+            ("Drill_PTH_Through.DRL", EasyDrl),
+            ("Drill_PTH_Through_Via.DRL", EasyDrlVia));
+        try
+        {
+            var board = BoardLoader.LoadZip(zip);
+            Assert.Empty(board.Warnings);
+            Assert.Equal(20.0, board.WidthMm, 3);
+            Assert.Equal(15.0, board.HeightMm, 3);
+            Assert.Equal(5.588, board.MinX, 3);
+            Assert.Equal(50.8, board.MinY, 3);
+            Assert.Single(board.Outline);
+            Assert.True(board.HasFace(BoardFace.Bottom));
+            Assert.True(board.HasFace(BoardFace.Top));
+
+            // 3 PTH (el slot de 0.006 mm es UN barreno en su centro) + 1 vía
+            Assert.Equal(4, board.Drills.Count);
+            var slotHole = board.Drills.Single(d => Math.Abs(d.Diameter - 1.016) < 1e-6 && d.X < 10);
+            Assert.Equal(8.003, slotHole.X, 3);
+            Assert.Equal(55.0, slotHole.Y, 3);
+            Assert.Equal(1.2, board.Drills.Single(d => d.X > 21).Diameter, 3);
+            Assert.Equal(0.306, board.Drills.Single(d => Math.Abs(d.X - 12) < 1e-6).Diameter, 3);
+
+            // la máscara (apertura de 9 mm) no contaminó el cobre: el cobre inferior cabe en la placa
+            var (cx0, cy0, cx1, cy1) = Geo.BoundsMm(board.CopperBottom!);
+            Assert.True(cx0 > 5.588 && cx1 < 25.588 && cy0 > 50.8 && cy1 < 65.8, "El cobre se sale de la placa.");
+
+            // la región G36 con el hueco LPC: el centro (12,60) está vacío, (10.5,58.5) está lleno
+            Assert.False(Geo.InsideFilled(Geo.Pt(12.0, 60.0), board.CopperTop!));
+            Assert.True(Geo.InsideFilled(Geo.Pt(10.5, 58.5), board.CopperTop!));
+
+            foreach (var face in new[] { BoardFace.Bottom, BoardFace.Top })
+            {
+                var r = CamGenerator.Generate(board, face, new CamPreset());
+                Assert.Empty(r.Warnings);
+                Assert.Equal(4, r.DrillCount);
+                Assert.Equal(3, r.DrillGroups.Count); // 0.8 (vía), 1.0 (1.016), 1.2
+                Assert.Equal(5, r.Files.Count);
+                foreach (var (name, content) in r.Files)
+                    Assert.True(GCodeProgram.FromText(content, name).Lines.Count > 5, name);
+            }
+
+            // la vía en diseño (12, 60) → cara inferior en espejo: X = 25.588 − 12, Y = 60 − 50.8
+            var bottom = CamGenerator.Generate(board, BoardFace.Bottom, new CamPreset());
+            var via = bottom.DrillGroups[0.8].Single();
+            Assert.Equal(13.588, via.x, 3);
+            Assert.Equal(9.2, via.y, 3);
+        }
+        finally { File.Delete(zip); }
     }
 
     [Fact]
