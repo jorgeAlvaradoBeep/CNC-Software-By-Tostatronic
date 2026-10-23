@@ -1,12 +1,13 @@
 namespace Tostatronic.Cnc.Core.Leveling;
 
 /// <summary>
-/// Aplica el mapa de alturas a un trabajo en curso (docs/wegstr-analisis.md §4.3): en cortes
-/// XY el ajuste de Z converge al desnivel de la celda actual a razón de ±1 paso por comando
-/// (sin interpolación bilineal, igual que Wegstr); en bajadas puras de Z (plunge) el desnivel
-/// se aplica completo. Cada vez que el sentido del ajuste se invierte se emiten pasos extra
-/// de holgura (backlash) que el juego mecánico del husillo de Z absorbe sin movimiento real.
-/// Los G00 no se corrigen. El estado vive durante todo el trabajo (una instancia por trabajo).
+/// Aplica el mapa de alturas a un trabajo en curso (docs/wegstr-analisis.md §4.3): en
+/// movimientos XY (G00 y G01 por igual, confirmado en hardware el 2026-10-21) el ajuste de Z
+/// converge al desnivel de la celda actual a razón de ±1 paso por comando (sin interpolación
+/// bilineal, igual que Wegstr); en movimientos puros de Z (plunge) el desnivel se aplica
+/// completo. Cada vez que el sentido del ajuste se invierte se emiten pasos extra de holgura
+/// (backlash) que el juego mecánico del husillo de Z absorbe sin movimiento real.
+/// El estado vive durante todo el trabajo (una instancia por trabajo).
 /// </summary>
 public sealed class LevelingCompensator
 {

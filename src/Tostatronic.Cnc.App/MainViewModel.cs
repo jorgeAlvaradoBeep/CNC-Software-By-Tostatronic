@@ -44,6 +44,7 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string levelingText = "sin calibrar";
     [ObservableProperty] private bool applyLeveling;
     [ObservableProperty] private bool isCalibrating;
+    [ObservableProperty] private string autoLevelText = "📐 CALIBRAR ALTURA";
 
     /// <summary>Paso del jog en mm; null = jog continuo.</summary>
     public double? JogStepMm { get; set; }
@@ -108,6 +109,7 @@ public partial class MainViewModel : ObservableObject
         SpindleOn = Machine.SpindleOn;
         ProbeLatch = Machine.ProbeLatch;
         IsCalibrating = Machine.Status == MachineStatus.Calibrando;
+        AutoLevelText = Machine.HasPausedCalibration ? "📐 CONTINUAR CALIBRACIÓN" : "📐 CALIBRAR ALTURA";
         ApplyLeveling = Machine.ApplyLeveling;
         if (!IsCalibrating)
             LevelingText = Machine.Leveling is { HasOffsets: true } lv

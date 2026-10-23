@@ -34,8 +34,10 @@ public sealed class MachineSettings
     public int AutoLevelZBacklashSteps { get; set; } = 4;
 
     /// <summary>
-    /// Sentido del conteo de Z que reporta el firmware en el toque de sonda (docs/wegstr-analisis.md §8).
-    /// Si al calibrar una placa inclinada las diferencias salen con el signo invertido, activar esto.
+    /// Sentido del conteo de Z que reporta el firmware en el toque de sonda. Por defecto (false)
+    /// se asume lo observado en la máquina real el 2026-10-21: el contador CRECE al bajar
+    /// (docs/wegstr-analisis.md §4.2 y §10). Solo activar si en una placa inclinada las
+    /// diferencias salieran con el signo al revés.
     /// </summary>
     public bool ProbeZReportInverted { get; set; } = false;
 

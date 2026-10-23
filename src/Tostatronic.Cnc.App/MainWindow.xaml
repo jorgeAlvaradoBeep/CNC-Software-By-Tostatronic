@@ -202,7 +202,7 @@
                         <StackPanel>
                             <TextBlock Text="CALIBRACIÓN DE ALTURA" Style="{StaticResource PanelTitle}"/>
                             <StackPanel Orientation="Horizontal">
-                                <Button Content="📐 CALIBRAR ALTURA" Height="36" Command="{Binding AutoLevelCommand}"
+                                <Button Content="{Binding AutoLevelText}" Height="36" Command="{Binding AutoLevelCommand}"
                                         IsEnabled="{Binding IsCalibrating, Converter={StaticResource Inverse}}"/>
                                 <CheckBox Content="Aplicar al trabajo" Margin="14,0,0,0"
                                           IsChecked="{Binding ApplyLeveling}"/>

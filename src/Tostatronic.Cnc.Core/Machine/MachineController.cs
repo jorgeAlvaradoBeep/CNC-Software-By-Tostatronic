@@ -31,6 +31,19 @@ public sealed class MachineController : IDisposable
     private readonly int[] _jogDir = new int[3];
     private Task? _jogTask;
 
+    // calibración de altura en curso o en pausa por falta de señal (reanudable)
+    private sealed class LevelingSession
+    {
+        public required LevelingMap Map { get; init; }
+        public required GCodeProgram Program { get; init; }
+        public int NextIndex { get; set; }
+        public int Done { get; set; }
+    }
+    private LevelingSession? _levelSession;
+
+    /// <summary>Timeout de respuesta de la máquina (ms); Wegstr usa 2 s.</summary>
+    public int ResponseTimeoutMs { get; set; } = 2000;
+
     public MachineSettings Settings { get; }
 
     public MachineController(MachineSettings? settings = null)
@@ -66,6 +79,9 @@ public sealed class MachineController : IDisposable
 
     /// <summary>Mapa de calibración de altura del programa actual (null = sin calibrar).</summary>
     public LevelingMap? Leveling { get; private set; }
+
+    /// <summary>Hay una calibración a medias (se perdió la señal); CALIBRAR ALTURA la continúa.</summary>
+    public bool HasPausedCalibration => _levelSession != null && Status != MachineStatus.Calibrando;
 
     /// <summary>Aplicar el mapa de alturas a los trabajos (se toma al iniciar cada trabajo).</summary>
     public bool ApplyLeveling { get; set; }
@@ -139,7 +155,7 @@ public sealed class MachineController : IDisposable
         try
         {
             serial.Open();
-            var wl = new WegstrLink(serial);
+            var wl = new WegstrLink(serial) { TimeoutMs = ResponseTimeoutMs };
             wl.RawSent += d => RawTraffic?.Invoke(d, true);
             wl.RawReceived += d => RawTraffic?.Invoke(d, false);
             wl.NotificationReceived += OnNotification;
@@ -563,6 +579,7 @@ public sealed class MachineController : IDisposable
         // aplica solo: únicamente vale si la placa y los ceros son los mismos de cuando se sondeó
         Leveling = LevelingMapFile.Load(LevelingMapFile.PathFor(path));
         ApplyLeveling = false;
+        _levelSession = null;
         if (Leveling != null)
             RaiseLog($"Mapa de alturas guardado encontrado ({Leveling.OffsetCount} puntos). " +
                      "Marca \"Aplicar al trabajo\" SOLO si la placa y los ceros son los mismos; si no, recalibra.");
@@ -585,6 +602,7 @@ public sealed class MachineController : IDisposable
         Program = null;
         Leveling = null;
         ApplyLeveling = false;
+        _levelSession = null;
         Changed?.Invoke();
     }
 
@@ -641,9 +659,13 @@ public sealed class MachineController : IDisposable
             : null;
 
     /// <summary>
-    /// Secuencia de calibración de altura estilo Wegstr (docs/wegstr-analisis.md §4.2):
-    /// sube 2 mm, va a X0 Y0, toma la referencia con la sonda (y ajusta Z0 al contacto),
-    /// sondea cada punto del mapa en el orden del recorrido y termina en X0 Y0 Z2.
+    /// Secuencia de calibración de altura estilo Wegstr, tal como se observó en la máquina real
+    /// (docs/wegstr-analisis.md §4.2 y §10): sube 2 mm, va a X0 Y0, toma la referencia con la
+    /// sonda (y ajusta Z0 al contacto), sondea cada punto del mapa en el orden del recorrido
+    /// subiendo 1 mm (2 mm en traslados largos) RELATIVO a la superficie local, y termina en
+    /// X0 Y0 Z2. Todos los movimientos van con 0x3F: el contador de Z del firmware solo se
+    /// mantiene coherente con esa cabecera. Si la máquina deja de contestar, la calibración
+    /// queda en pausa y esta misma llamada la continúa (volviendo a tomar la referencia).
     /// </summary>
     public async Task AutoLevelAsync()
     {
@@ -661,67 +683,93 @@ public sealed class MachineController : IDisposable
         if (ProbeLatch) { RaiseWarning("Sonda en contacto: primero sube Z (Z+)."); return; }
         if (!TryAcquireActivity()) { RaiseWarning("Hay otra operación en curso."); return; }
 
+        bool resuming = _levelSession != null && ReferenceEquals(_levelSession.Program, Program);
+        if (!resuming) _levelSession = null;
+
         SetStatus(MachineStatus.Calibrando);
         Leveling = null;
         ApplyLeveling = false;
         try
         {
-            var map = ProbePointPlanner.Build(Program, Settings);
-            if (map.ProbePoints.Count == 0)
-            {
-                RaiseWarning("El programa no tiene movimientos de corte: no hay puntos que sondear.");
-                return;
-            }
             var ct = _estopCts.Token;
             double mmZ = Settings.MmPerStep(Axis.Z);
-            RaiseLog($"Calibración de altura: {map.ProbePoints.Count} puntos, raster {map.RasterMm:F1} mm. " +
-                     "La máquina sondeará sobre las trayectorias de corte (pinza de la sonda al cobre).");
+            LevelingMap map;
+            int startIndex;
+            if (resuming)
+            {
+                map = _levelSession!.Map;
+                startIndex = _levelSession.NextIndex;
+                RaiseLog($"Continuando la calibración en el punto {startIndex + 1} de {map.ProbePoints.Count} " +
+                         "(se vuelve a tomar la referencia en X0 Y0).");
+            }
+            else
+            {
+                map = ProbePointPlanner.Build(Program, Settings);
+                if (map.ProbePoints.Count == 0)
+                {
+                    RaiseWarning("El programa no tiene movimientos de corte: no hay puntos que sondear.");
+                    return;
+                }
+                startIndex = 0;
+                _levelSession = new LevelingSession { Map = map, Program = Program };
+                RaiseLog($"Calibración de altura: {map.ProbePoints.Count} puntos, raster {map.RasterMm:F1} mm. " +
+                         "La máquina sondeará sobre las trayectorias de corte (pinza de la sonda al cobre).");
+            }
+            var session = _levelSession!;
             SetSpindleFlag(false);
 
             long lift2 = Settings.StepsFromMm(Axis.Z, 2.0);
             long descend = Settings.StepsFromMm(Axis.Z, 10.0);
             long safeNear = Settings.StepsFromMm(Axis.Z, Math.Clamp(Settings.AutoLevelSafeZMm, 0.1, 40.0));
             long safeFar = Math.Max(safeNear, Settings.StepsFromMm(Axis.Z, 2.0));
+            // el firmware cuenta positivo hacia abajo: superficie más alta ⇒ lectura menor
             int sign = Settings.ProbeZReportInverted ? -1 : 1;
 
-            // 1) levantar 2 mm y 2) al origen de trabajo
-            await RapidAsync(Position with { Z = Position.Z + lift2 }, ct).ConfigureAwait(false);
-            await RapidAsync(Position with { X = 0, Y = 0 }, ct).ConfigureAwait(false);
+            // 1) levantar 2 mm (relativo) y 2) al origen de trabajo
+            await CalibrationMoveAsync(Position with { Z = Position.Z + lift2 }, ct).ConfigureAwait(false);
+            await CalibrationMoveAsync(Position with { X = 0, Y = 0 }, ct).ConfigureAwait(false);
 
-            // 3) referencia en X0 Y0: el contacto redefine Z0 (de ahí salen todos los desniveles)
+            // 3) referencia en X0 Y0: el contacto redefine Z0 (de ahí salen todos los desniveles).
+            //    Al reanudar se repite: la placa no se movió, así que la referencia física es la
+            //    misma aunque el contador del firmware haya cambiado con la reconexión.
             short r0 = await ProbeDownAsync(descend, "X0 Y0", ct).ConfigureAwait(false);
             ZSteps = 0;
             Changed?.Invoke();
             RaiseLog("Referencia tomada en X0 Y0; Z0 ajustado al contacto.");
 
             // 4) sondear cada punto en el orden del recorrido
-            int done = 0;
-            foreach (var p in map.ProbePoints)
+            int done = session.Done;
+            for (int i = startIndex; i < map.ProbePoints.Count; i++)
             {
+                var p = map.ProbePoints[i];
                 ct.ThrowIfCancellationRequested();
                 double travelMm = Math.Sqrt(
                     Math.Pow(Settings.MmFromSteps(Axis.X, p.XSteps - XSteps), 2) +
                     Math.Pow(Settings.MmFromSteps(Axis.Y, p.YSteps - YSteps), 2));
                 long lift = travelMm >= 10.0 ? safeFar : safeNear;
-                await RapidAsync(Position with { Z = lift }, ct).ConfigureAwait(false);
-                await RapidAsync(Position with { X = p.XSteps, Y = p.YSteps }, ct).ConfigureAwait(false);
+                await CalibrationMoveAsync(Position with { Z = Position.Z + lift }, ct).ConfigureAwait(false);
+                await CalibrationMoveAsync(Position with { X = p.XSteps, Y = p.YSteps }, ct).ConfigureAwait(false);
 
                 string donde = $"X{Settings.MmFromSteps(Axis.X, p.XSteps):F2} Y{Settings.MmFromSteps(Axis.Y, p.YSteps):F2}";
                 short ri = await ProbeDownAsync(descend, donde, ct).ConfigureAwait(false);
 
-                // la posición reportada por el firmware resincroniza el contador de Z
-                long z = (long)sign * (ri - r0);
+                // la posición reportada por el firmware resincroniza el contador de Z (absorbe
+                // los pasos de bajada que la máquina descartó tras el toque)
+                long z = (long)sign * (r0 - ri);
                 ZSteps = z;
                 map.SetOffset(p.Cell, (int)z);
                 done++;
+                session.NextIndex = i + 1;
+                session.Done = done;
                 Changed?.Invoke();
                 LevelingProgress?.Invoke(done, map.ProbePoints.Count, z * mmZ);
             }
 
-            // 5) terminar en Z2 y el origen
-            await RapidAsync(Position with { Z = lift2 }, ct).ConfigureAwait(false);
-            await RapidAsync(Position with { X = 0, Y = 0 }, ct).ConfigureAwait(false);
+            // 5) terminar en Z2 (sobre la referencia) y el origen
+            await CalibrationMoveAsync(Position with { Z = lift2 }, ct).ConfigureAwait(false);
+            await CalibrationMoveAsync(Position with { X = 0, Y = 0 }, ct).ConfigureAwait(false);
 
+            _levelSession = null;
             Leveling = map;
             ApplyLeveling = true;
             RaiseLog($"Calibración completa: {done} puntos; superficie entre {map.MinOffsetMm:+0.000;-0.000} y " +
@@ -736,9 +784,14 @@ public sealed class MachineController : IDisposable
                 catch (Exception ex) { RaiseLog("No se pudo guardar el mapa: " + ex.Message); }
             }
         }
-        catch (ProbeAbortException ex) { RaiseWarning(ex.Message); }
-        catch (OperationCanceledException) { RaiseWarning("Calibración cancelada."); }
-        catch (MachineTimeoutException) { RaiseWarning("La máquina no envió la señal durante la calibración; revisa la conexión e intenta de nuevo."); }
+        catch (ProbeAbortException ex) { _levelSession = null; RaiseWarning(ex.Message); }
+        catch (OperationCanceledException) { _levelSession = null; RaiseWarning("Calibración cancelada."); }
+        catch (MachineTimeoutException)
+        {
+            RaiseWarning("La máquina no envió la señal durante la calibración; queda en pausa. " +
+                         "Revisa la conexión (reconecta el USB si hace falta) y pulsa CONTINUAR CALIBRACIÓN " +
+                         "para seguir donde se quedó.");
+        }
         finally
         {
             if (Status == MachineStatus.Calibrando)
@@ -748,18 +801,27 @@ public sealed class MachineController : IDisposable
         }
     }
 
-    /// <summary>Rápido con 0xFF durante la calibración; si la máquina lo interrumpe, aborta.</summary>
-    private async Task RapidAsync(StepPosition target, CancellationToken ct)
+    /// <summary>
+    /// Movimiento de la calibración (subidas y traslados), con 0x3F como Wegstr. Un toque
+    /// durante el tramo (sonda todavía en contacto) no es error: se reintenta el tramo.
+    /// Si la máquina lo interrumpe (botón/sobrecarga), aborta.
+    /// </summary>
+    private async Task CalibrationMoveAsync(StepPosition target, CancellationToken ct)
     {
-        var reply = await PlannedMoveAsync(target, PacketEncoder.MoveHeader, ct).ConfigureAwait(false);
-        if (reply == null) return;
-        SetSpindleFlag(false);
-        throw new ProbeAbortException(reply.Value.Kind switch
+        for (int attempt = 0; attempt < 3; attempt++)
         {
-            MachineNotification.Released => "Máquina liberada con el botón físico; calibración cancelada.",
-            MachineNotification.SpindleOverload => "Husillo sobrecargado; calibración cancelada.",
-            _ => $"Calibración interrumpida por la máquina (respuesta {(byte)reply.Value.Kind}).",
-        });
+            var reply = await PlannedMoveAsync(target, PacketEncoder.ProbeHeader, ct).ConfigureAwait(false);
+            if (reply == null) return;
+            if (reply.Value.Kind == MachineNotification.ProbeTouch) continue;
+            SetSpindleFlag(false);
+            throw new ProbeAbortException(reply.Value.Kind switch
+            {
+                MachineNotification.Released => "Máquina liberada con el botón físico; calibración cancelada.",
+                MachineNotification.SpindleOverload => "Husillo sobrecargado; calibración cancelada.",
+                _ => $"Calibración interrumpida por la máquina (respuesta {(byte)reply.Value.Kind}).",
+            });
+        }
+        throw new ProbeAbortException("La sonda sigue en contacto al mover; revisa la pinza y la placa.");
     }
 
     /// <summary>Baja Z con 0x3F hasta el toque y devuelve la Z en pasos reportada por el firmware.</summary>
@@ -790,6 +852,7 @@ public sealed class MachineController : IDisposable
         Job?.Discard();
         if (Program != null)
             Job = new JobRunner(this, Program);
+        _levelSession = null;
         SetSpindleFlag(false);
         _ = Task.Run(async () =>
         {

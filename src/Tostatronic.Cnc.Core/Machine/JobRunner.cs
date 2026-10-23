@@ -191,7 +191,7 @@ public sealed class JobRunner
                 {
                     advance = () => SpeedModel.CuttingAdvance(_feed, _m.SpeedPercent);
                 }
-                await MoveToAsync(target, advance, cutting: line.Command == "G01", estop).ConfigureAwait(false);
+                await MoveToAsync(target, advance, estop).ConfigureAwait(false);
                 break;
             }
             case "G02":
@@ -212,12 +212,14 @@ public sealed class JobRunner
                         _m.Settings.StepsFromMm(Axis.X, points[k].X),
                         _m.Settings.StepsFromMm(Axis.Y, points[k].Y),
                         _m.Settings.StepsFromMm(Axis.Z, zk));
-                    await MoveToAsync(target, advance, cutting: true, estop).ConfigureAwait(false);
+                    await MoveToAsync(target, advance, estop).ConfigureAwait(false);
                 }
                 break;
             }
             case "G04":
             {
+                // Wegstr ignora G4 (confirmado en hardware); nosotros sí esperamos: sirve para
+                // que el husillo tome velocidad antes del primer corte.
                 await FlushAsync(estop).ConfigureAwait(false);
                 double seconds = line.P ?? 0;
                 if (seconds > 0)
@@ -278,10 +280,11 @@ public sealed class JobRunner
     /// <summary>
     /// Mueve hasta el objetivo con pausa entre paquetes; si la máquina no responde o se
     /// interrumpe (botón/sobrecarga), queda en pausa/detenido y al reanudar replanifica
-    /// desde la posición real. En movimientos de corte aplica la compensación de altura:
-    /// ±1 paso por comando en cortes XY, completa en bajadas puras de Z (plunge).
+    /// desde la posición real. Aplica la compensación de altura a todos los movimientos,
+    /// como Wegstr (confirmado en hardware el 2026-10-21): ±1 paso por comando en
+    /// movimientos XY (G00 o G01), completa en movimientos puros de Z (plunge).
     /// </summary>
-    private async Task MoveToAsync(StepPosition target, Func<double> advance, bool cutting, CancellationToken estop)
+    private async Task MoveToAsync(StepPosition target, Func<double> advance, CancellationToken estop)
     {
         while (true)
         {
@@ -298,7 +301,7 @@ public sealed class JobRunner
                     _gen = new StepPosition(_gen.X + cmd.Dx, _gen.Y + cmd.Dy, _gen.Z + cmd.Dz);
                     var send = cmd;
                     int extra = 0;
-                    if (cutting && _lev != null)
+                    if (_lev != null)
                     {
                         extra = _lev.Extra(_gen.X, _gen.Y, cmd.Dz, rampStep: !plunge);
                         if (extra != 0)

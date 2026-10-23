@@ -66,6 +66,8 @@ Byte 2: [ sp | sz | z8 | sy | y3 y2 y1 y0 ]
   en 1/0. **No hay control de RPM por software**: la `S` del G-code se ignora.
 - El firmware ejecuta los comandos a cadencia fija. De la fórmula de velocidad (ver 2.6) se
   infiere ≈ **50.6 comandos/s** (un paquete de 3 cada ~59 ms). A 9600 baudios sobra ancho de banda.
+  **Confirmado en hardware (§10)**: el ACK llega 59 ms después de cada paquete y Wegstr manda el
+  siguiente 0.1 ms después del ACK → 50.8 comandos/s.
 
 ### 2.4 Respuestas máquina → PC (1 byte, salvo el toque)
 
@@ -116,7 +118,10 @@ pendientes y un **timeout de 2 s**: si la máquina no contesta, se vacía la col
 - **Cero de trabajo**: botones que ponen en 0 el contador de cada eje (o todos). Todo es
   conteo PC-side; la máquina no guarda nada.
 - **Z0 sobre el cobre**: se baja Z con jog; como el jog usa `0x3F`, al cerrar el circuito de la
-  sonda (pinza al cobre) la máquina **se detiene sola** y reporta el toque; ahí se pone Z=0.
+  sonda (pinza al cobre) la máquina **se detiene sola** y reporta el toque; **Wegstr pone Z=0
+  automáticamente** en el contacto (confirmado: en un cambio de broca el usuario bajó hasta tocar
+  sin pulsar Z0 y el programa siguió con el nuevo cero). Los pasos de bajada que la PC ya había
+  mandado y la máquina descartó no importan: el contador de la PC queda anclado a la superficie.
 - **GO ZERO**: G00 a Z de altura segura (ajuste, default 5 mm, activable), luego X0 Y0, luego Z0.
 - **Husillo**: toggle; si se activa durante un movimiento solo se marca el bit en los comandos
   siguientes. Hay ajuste "husillo automático" (encenderlo al iniciar un trabajo). La sobrecarga
@@ -127,7 +132,11 @@ pendientes y un **timeout de 2 s**: si la máquina no contesta, se vacía la col
   primero a la posición pausada (XY, luego Z). El botón físico del equipo ("released", respuesta
   3) actúa como paro desde la máquina.
 - **M0 / M6+M0**: pausa obligatoria con diálogo (cambio de herramienta si la línea anterior fue
-  M6); M47 = reiniciar el programa desde la primera línea.
+  M6); M47 = reiniciar el programa desde la primera línea. Observado: la pausa actúa a nivel de
+  paquete, así que el resto de la línea en curso (p. ej. 9 pasos de un `G1 Z0`) se manda al
+  reanudar, antes de la línea siguiente; no se reejecuta la línea. Al entrar en pausa y al
+  terminar el programa Wegstr manda un paquete `0x3F` nulo (si la herramienta está tocando el
+  cobre la máquina contesta "toque", sin consecuencias).
 
 ## 4. Calibración de altura (auto level) — el mecanismo exacto
 
@@ -161,6 +170,26 @@ Se genera internamente esta lista (IDs internos 1001–1003; 1001 marca "comando
    igual que en (3).
 5. Al final: `G00 Z2`, `G00 X0 Y0`.
 
+**Confirmado en hardware (§10), con matices importantes:**
+
+- **Todos los movimientos del auto level van con cabecera `0x3F`**, no solo las bajadas: las
+  subidas y los traslados XY también. Hay una razón: el contador de Z que reporta el firmware
+  **solo se mantiene coherente mientras se mueve con `0x3F`**; con `0xFF` se descompone (entre
+  dos toques con 25 600 pasos arriba y 25 600 abajo en modo `0xFF`, el contador cambió −50 638:
+  cada paso de Z lo decrementa sin importar el sentido).
+- **El contador de Z del firmware crece al BAJAR** (sentido opuesto al contador de la PC) y
+  **no es absoluto**: en dos sesiones el mismo cobre dio 1909 y 255. Solo sirven las diferencias
+  entre toques consecutivos dentro de una secuencia `0x3F`.
+- La subida entre puntos es **relativa a la posición del toque** (250 pasos = 1 mm, o 500 si
+  el traslado es ≥ 10 mm), no a una Z absoluta. Wegstr **no resincroniza** su contador de Z con
+  el valor reportado; como la máquina descarta los pasos de bajada que llegan después del toque
+  (la PC ya había mandado 76–90 pasos de más, ≈ 2 paquetes), el contador de la PC queda anclado
+  a la superficie y el error se absorbe solo.
+- Traslados XY a 14 pasos/comando; bajada con rampa 10, 11, 12, 13, 14. Unos 1.15 s por punto
+  (299 puntos en 6 minutos).
+- Si la máquina deja de contestar (timeout de 2 s), Wegstr desconecta y conserva el estado: tras
+  reconectar el USB y volver a "online" **continuó la calibración exactamente donde se quedó**.
+
 Por cada toque se guarda `diff(celda) = z₀ − z_medida` **en pasos** (short) y se emite el evento
 de diferencia para mostrarla en la UI. Si el conteo de toques no coincide con los sondeos
 esperados, auto level falla ("no se detectó ningún toque o el husillo estaba demasiado alto").
@@ -179,13 +208,15 @@ Durante la ejecución, con auto level hecho y "aplicar" activo:
   que el sentido del ajuste de Z se invierte (sube↔baja) se añaden/quitan esos pasos extra para
   compensar el juego del husillo de Z. El estado sube/baja se rastrea durante todo el trabajo,
   incluidos los retornos de pausa.
-- Los G00 no se corrigen en XY (solo los plunges heredan la corrección al llegar).
+- **Los G00 en XY también se corrigen** con la misma rampa de ±1 paso por comando (confirmado en
+  hardware: en el `G0 X10 Y10` previo a un cambio de broca, a Z = 15 mm, la Z fue variando −6,
+  −4, +6, −11, −228 pasos a lo largo del traslado, y al final del trabajo el `G0 X0 Y0` también).
+  La versión anterior de este documento decía lo contrario.
 - El mapa vive en memoria por proyecto; cambiar el raster exige recargar el proyecto y re-sondear.
 
-> Nota de signo: el valor reportado por el firmware en el `0x04` está en el mismo espacio de
-> pasos que los contadores de la PC, pero el **sentido positivo del conteo de Z del firmware hay
-> que verificarlo en hardware** (prueba trivial: placa inclinada y ver el signo de las diffs).
-> El mecanismo es idéntico en cualquier caso; solo cambia un signo.
+> Signo (resuelto en hardware, §10): el contador que reporta el firmware **crece al bajar**.
+> Con `diff = z₀ − z_medida`, una superficie más alta que la referencia da una lectura menor y
+> por tanto `diff > 0` = subir la herramienta, que es justo lo que hace Wegstr.
 
 ## 5. G-code soportado por Wegstr
 
@@ -199,6 +230,10 @@ Durante la ejecución, con auto level hecho y "aplicar" activo:
   herramienta), M47 = volver a empezar. S y T se ignoran. F se recorta a 170.
 - G21/G90/G94/G40/G49/G80/G71/G91.1 etc. se ignoran sin error (el sample oficial los trae).
   **Todo se asume milímetros y coordenadas absolutas** (no hay soporte G91).
+- **G4 se ignora** (confirmado: entre el fin de `G0 Z15` y el arranque hacia el primer barreno,
+  con `M3 S10000 / G4 P3` en medio, pasaron 0 ms). **M3/M5 no mandan paquete propio**: el bit
+  del husillo simplemente viaja en el siguiente movimiento, sin tiempo de arranque.
+- Los comentarios con paréntesis anidados `( a (b) )` no dan error.
 
 ## 6. Ajustes persistentes de Wegstr (Java Preferences)
 
@@ -233,19 +268,49 @@ persistencia de sesión/mapa de alturas, consola, simulador.
 
 ## 8. Incertidumbres a verificar con la máquina
 
-1. **Signo del conteo Z del firmware** en el reporte de toque (§4.3). Prueba: sondear dos puntos
-   con alturas conocidas distintas.
-2. **Cadencia exacta del firmware** (inferida ≈ 50.6 comandos/s a rendimiento 4) y el efecto real
-   del valor del paquete `0x7F` (¿cadencia? ¿timeout interno?). Prueba: cronometrar un movimiento
-   largo a F conocido con distintos valores.
-3. Si el firmware responde ACK también al paquete `0x7F` (el código lo trata igual que cualquier
-   envío, así que casi seguro sí).
-4. Comportamiento del toque de sonda con cabecera `0xFF` (se asume que lo ignora).
+1. ~~**Signo del conteo Z del firmware**~~ **Resuelto (§10)**: crece al bajar; no es absoluto y
+   solo es coherente con movimiento `0x3F`. Queda pendiente la prueba fina con placa inclinada
+   usando nuestro software, para confirmar el signo de las diffs aplicadas.
+2. ~~**Cadencia exacta del firmware**~~ **Resuelto**: 59 ms por paquete (50.8 comandos/s) con
+   rendimiento 4. El efecto de otros valores de `0x7F` sigue sin medirse.
+3. ~~ACK al paquete `0x7F`~~ **Resuelto**: sí, en ≈ 5 ms.
+4. Comportamiento del toque de sonda con cabecera `0xFF` (se asume que lo ignora). Sin datos
+   directos; el `0x3F` nulo que Wegstr manda al pausar sí recibió "toque" con la broca en el cobre.
 5. El sample oficial usa Y negativas; confirmar que no hay límites de software (todo indica que
    no: la máquina solo cuenta pasos).
+6. **Nuevo**: la máquina (o el puente CH340) puede colgarse a mitad de una bajada de sondeo
+   (ocurrió una vez en 464 toques); dos intentos de detección quedaron sin respuesta hasta
+   reconectar el cable USB. Nuestro software debe tolerar reconexión y continuar.
 
 ## 9. Archivos útiles de la carpeta Wegstr
 
 - `Utils\Samples (g-code)\PCB_test.txt` — ejemplo del dialecto G-code esperado.
 - `Utils\Postprocessors\WEGSTR_Fusion360.txt` — referencia del postprocesador oficial.
 - `Driver\Windows\CH341SER.EXE` — driver del puerto (ya instalado si la máquina ya se usó).
+
+## 10. Confirmación en hardware (captura del tráfico real, 2026-10-21)
+
+Se capturó el tráfico serial entre Wegstr v3.2.0 y la máquina mientras se fresaba una
+baquelita real (aislamiento de una cara, ~1.3 m de corte, y 21 barrenos con cambio de broca):
+jog, Z0 al toque, dos calibraciones de altura (una interrumpida, otra con 299 puntos), el
+trabajo de aislamiento (solo su final) y el de barrenos completo, incluida la pausa M0 con
+cambio de broca y la reanudación. Método: enganche de `WriteFile`/`ReadFile`/`GetOverlappedResult`
+dentro del proceso de Wegstr (Frida), sin drivers ni puertos virtuales. Nunca apareció un byte
+fuera del protocolo descrito. Los registros crudos, los CSV decodificados y los scripts están en
+`Documents\Wegstr_capturas_2026-10-21` de la PC de pruebas (no en el repo).
+
+Resumen de lo confirmado y de lo que cambió respecto a las secciones anteriores:
+
+| Tema | Resultado |
+|---|---|
+| Paquetes, ACK, stop-and-wait, keep-alive `7F 04` cada 1 s con ACK | Igual que §2 |
+| Cadencia | 59 ms/paquete, 50.8 cmd/s; el siguiente paquete sale 0.1 ms tras el ACK |
+| Velocidades | F30 → 3 pasos/cmd, F100 → 8–9, F150 → 12–13, G0 → 14 (fórmula de §2.6) |
+| Auto level | Todo con `0x3F`; subida relativa 1 mm (2 mm si traslado ≥ 10 mm); rampa de bajada 10..14; 1.15 s/punto; sin resincronizar el contador; 76–90 pasos de bajada descartados tras cada toque |
+| Contador Z del firmware | Crece al bajar; no absoluto; coherente solo con `0x3F` |
+| Aplicación del mapa | También en G00 XY (±1 paso/cmd), no solo en cortes |
+| Jog con toque | Fija Z0 automáticamente |
+| G4 | Se ignora; M3/M5 no mandan paquete propio |
+| M0 | Pausa a nivel de paquete; el resto de la línea se vacía al reanudar; `0x3F` nulo al pausar y al terminar |
+| Pérdida de señal | Wegstr conserva el estado y continúa tras reconectar (calibración incluida) |
+| Placa real (baquelita 1.6 mm) | 0.9 mm de desnivel entre pistas, 1.6 mm contando el origen: por eso el auto level es imprescindible |

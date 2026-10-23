@@ -325,6 +325,98 @@ public class AutoLevelSimulationTests
     }
 
     [Fact]
+    public async Task LaCalibracionSoloUsaPaquetesDeSondeo()
+    {
+        // Wegstr mueve TODO el auto level con 0x3F (subidas y traslados incluidos) porque el
+        // contador de Z del firmware solo es coherente con esa cabecera (hardware 2026-10-21).
+        using var c = await ConnectAsync();
+        c.Simulator!.SurfaceZMm = (x, _) => -2.0 + 0.02 * x;
+        var headers = new List<byte>();
+        c.RawTraffic += (data, outgoing) =>
+        {
+            if (outgoing && data.Length == 7) lock (headers) headers.Add(data[0]);
+        };
+        c.LoadProgram(WriteProgram("nivel_3f.nc", """
+            G0 X0 Y0
+            G1 Z-0.1 F100
+            G1 X10 F150
+            M2
+            """));
+        await c.AutoLevelAsync();
+        Assert.NotNull(c.Leveling);
+        lock (headers)
+        {
+            Assert.NotEmpty(headers);
+            Assert.All(headers, h => Assert.Equal(0x3F, h));
+        }
+    }
+
+    [Fact]
+    public async Task LaCalibracionSeReanudaTrasPerderLaSenal()
+    {
+        var c = new MachineController(new MachineSettings()) { SimulationMode = true, ResponseTimeoutMs = 150 };
+        Assert.True(await c.ConnectAsync());
+        c.Simulator!.CommandPeriodMs = 0;
+        c.Simulator.SurfaceZMm = (x, _) => -2.0 + 0.02 * x;
+        int touches = 0;
+        c.RawTraffic += (data, outgoing) =>
+        {
+            // la máquina se cuelga tras el 5.º toque (referencia + 4 puntos), como pasó en hardware
+            if (!outgoing && data.Length == 3 && data[0] == 4 && ++touches == 5)
+                c.Simulator.Silent = true;
+        };
+        c.LoadProgram(WriteProgram("nivel_reanuda.nc", """
+            G0 X0 Y0
+            G1 Z-0.1 F100
+            G1 X10 F150
+            M2
+            """));
+        await c.AutoLevelAsync();
+        Assert.Null(c.Leveling);
+        Assert.True(c.HasPausedCalibration);
+        Assert.Equal(MachineStatus.Inactivo, c.Status);
+
+        c.Simulator.Silent = false;
+        await c.AutoLevelAsync();   // continúa donde se quedó, volviendo a referenciar en X0 Y0
+        Assert.False(c.HasPausedCalibration);
+        var map = c.Leveling;
+        Assert.NotNull(map);
+        Assert.Equal(11, map!.OffsetCount);
+        Assert.True(map.TryGetOffset(map.CellOf(2500, 0), out int o10));
+        Assert.InRange(o10, 48, 52);
+        Assert.Equal(0, c.XSteps);
+        Assert.Equal(0, c.YSteps);
+        Assert.Equal(500, c.ZSteps);
+        Assert.Equal(0, c.Simulator.ZSteps);
+        c.Dispose();
+    }
+
+    [Fact]
+    public async Task LosG0TambienSiguenLaSuperficie()
+    {
+        // Wegstr aplica la rampa de ±1 paso también en los G00 en XY (hardware 2026-10-21)
+        using var c = await ConnectAsync();
+        c.Simulator!.SurfaceZMm = (x, _) => -2.0 + 0.02 * x;
+        c.LoadProgram(WriteProgram("nivel_g0.nc", """
+            G0 X0 Y0
+            G1 Z-0.1 F100
+            G1 X10 F150
+            G0 X0
+            M2
+            """));
+        await c.AutoLevelAsync();
+        Assert.NotNull(c.Leveling);
+
+        c.StartOrResumeJob();
+        await WaitForAsync(() => c.Status == MachineStatus.Terminado);
+
+        Assert.Equal(0, c.XSteps);
+        // el regreso en G0 también se corrigió: termina ≈ 0.1 mm bajo la superficie en X0 (−500 pasos)
+        long depth = c.Simulator.ZSteps - (-500);
+        Assert.InRange(depth, -33, -17);
+    }
+
+    [Fact]
     public async Task SinContactoLaCalibracionFallaConAviso()
     {
         using var c = await ConnectAsync();

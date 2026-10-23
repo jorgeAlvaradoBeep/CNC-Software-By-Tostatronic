@@ -4,7 +4,7 @@
 
 Hecho en C# (.NET 8 + WPF), con interfaz en español. Nace de la necesidad de un flujo completo en un solo programa: controlar la máquina, mandar G-code con calibración de altura estilo Wegstr y, en fases siguientes, generar las trayectorias directamente desde los Gerber/Excellon de EasyEDA — incluyendo placas de dos caras con pines de calibración.
 
-> ⚠️ **Proyecto en desarrollo activo.** Hoy están completas las **Fases A, B y C** (control de máquina, envío de G-code, calibración de altura y generación de trayectorias desde Gerber/Excellon, con modo simulación); C ya se validó con una exportación real de EasyEDA Std; B y C aún están pendientes de probarse con la máquina real. Ver el [plan por fases](docs/plan.md).
+> ⚠️ **Proyecto en desarrollo activo.** Hoy están completas las **Fases A, B y C** (control de máquina, envío de G-code, calibración de altura y generación de trayectorias desde Gerber/Excellon, con modo simulación); C ya se validó con una exportación real de EasyEDA Std y B se contrastó con una captura del tráfico real del software original fresando una placa (ver [`docs/wegstr-analisis.md` §10](docs/wegstr-analisis.md)); B y C aún están pendientes de probarse con nuestra app en la máquina. Ver el [plan por fases](docs/plan.md).
 
 ## ¿Por qué?
 

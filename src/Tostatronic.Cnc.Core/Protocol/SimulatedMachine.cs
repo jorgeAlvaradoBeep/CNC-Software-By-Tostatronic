@@ -27,10 +27,27 @@ public sealed class SimulatedMachine : ISerialLink
     public bool SpindleOn { get; private set; }
     public int Performance { get; private set; } = 4;
 
+    /// <summary>
+    /// Contador de Z del firmware tal como lo reporta en el toque (confirmado con la máquina
+    /// real el 2026-10-21): NO es una posición absoluta, CRECE AL BAJAR y solo se mantiene
+    /// coherente mientras la máquina se mueve con paquetes 0x3F; con 0xFF cada paso de Z lo
+    /// decrementa sin importar el sentido. Arranca en un valor arbitrario.
+    /// </summary>
+    public long ProbeCounter { get; private set; } = 1000;
+
+    /// <summary>Si es true la máquina deja de contestar (simula el cuelgue del USB visto en hardware).</summary>
+    public bool Silent { get; set; }
+
     /// <summary>Superficie de la "placa" en mm absolutos del simulador: z = f(x, y). null = la sonda nunca toca.</summary>
     public Func<double, double, double>? SurfaceZMm { get; set; }
 
     public double MmPerStep => 10.0 / StepsPer10mm;
+
+    private bool InContact()
+    {
+        if (SurfaceZMm == null) return false;
+        return ZSteps * MmPerStep <= SurfaceZMm(XSteps * MmPerStep, YSteps * MmPerStep);
+    }
 
     public void Open()
     {
@@ -59,6 +76,8 @@ public sealed class SimulatedMachine : ISerialLink
         {
             await foreach (var packet in _rx.Reader.ReadAllAsync(ct).ConfigureAwait(false))
             {
+                if (Silent)
+                    continue; // colgada: ni ejecuta ni contesta
                 if (packet.Length == 2 && packet[0] == PacketEncoder.SettingsHeader)
                 {
                     Performance = packet[1];
@@ -77,20 +96,31 @@ public sealed class SimulatedMachine : ISerialLink
                     SpindleOn = cmd.Spindle;
                     XSteps += cmd.Dx;
                     YSteps += cmd.Dy;
-                    ZSteps += cmd.Dz;
+                    long zBefore = ZSteps;
+                    int dz = cmd.Dz;
+                    // con la sonda cerrada el firmware descarta la bajada (en modo 0x3F)
+                    if (probe && dz < 0 && InContact())
+                        dz = 0;
+                    ZSteps += dz;
                     if (probe && SurfaceZMm != null)
                     {
                         double surf = SurfaceZMm(XSteps * MmPerStep, YSteps * MmPerStep);
                         if (ZSteps * MmPerStep <= surf)
                         {
-                            ZSteps = (long)Math.Round(surf / MmPerStep);
+                            ZSteps = Math.Max(ZSteps, (long)Math.Round(surf / MmPerStep));
                             touched = true;
-                            break;
                         }
                     }
+                    long executed = ZSteps - zBefore;
+                    ProbeCounter += probe ? -executed : -Math.Abs(executed);
+                    if (touched)
+                        break; // el resto del paquete se descarta
                 }
                 if (touched)
-                    Respond(4, (byte)(ZSteps >> 8), (byte)ZSteps);
+                {
+                    short v = (short)ProbeCounter;
+                    Respond(4, (byte)(v >> 8), (byte)v);
+                }
                 else
                     Respond(1);
             }

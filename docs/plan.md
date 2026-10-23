@@ -61,7 +61,13 @@ Así el repaso, las dos caras y el G-code externo reciben exactamente el mismo t
   (con retorno a posición pausada), M0/M6 guiados.
 - Prueba contigo: mover la máquina, Z0 por toque, correr un .nc de tus scripts.
 
-### Fase B — Calibración de altura ✅ (implementada 2026-10-20; falta probar en hardware)
+### Fase B — Calibración de altura ✅ (implementada 2026-10-20; contrastada el 2026-10-21 con la captura del software original, ver `wegstr-analisis.md` §10; falta probar nuestra app en máquina)
+
+Correcciones derivadas de la captura (2026-10-21): toda la calibración va con `0x3F` (el
+contador del firmware solo es coherente así), el firmware cuenta Z positivo hacia abajo
+(`diff = r0 − ri`), la subida entre puntos es relativa a la superficie local, la compensación
+se aplica también en los G00 en XY, y la calibración queda en pausa reanudable (botón
+"CONTINUAR CALIBRACIÓN", vuelve a referenciar en X0 Y0) si la máquina deja de contestar.
 - Rejilla sobre trayectorias (raster configurable, default 1.0 mm), sondeo en el orden del
   recorrido con referencia en X0 Y0 (el contacto redefine Z0), mapa de alturas, aplicación con
   rampa de ±1 paso + desnivel completo en plunges + backlash de Z configurable.

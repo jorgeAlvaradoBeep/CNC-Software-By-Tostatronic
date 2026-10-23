@@ -2,11 +2,38 @@ using Tostatronic.Cnc.Core.Config;
 using Tostatronic.Cnc.Core.GCode;
 using Tostatronic.Cnc.Core.Machine;
 using Tostatronic.Cnc.Core.Motion;
+using Tostatronic.Cnc.Core.Protocol;
 
 namespace Tostatronic.Cnc.Tests;
 
 public class SimulatedMachineTests
 {
+    [Fact]
+    public void ElContadorDeSondaCreceAlBajarYSoloEsCoherenteCon3F()
+    {
+        // comportamiento del firmware real observado el 2026-10-21
+        using var sim = new SimulatedMachine { CommandPeriodMs = 0 };
+        var replies = new System.Collections.Concurrent.BlockingCollection<byte[]>();
+        sim.DataReceived += d => replies.Add(d);
+        sim.Open();
+        long start = sim.ProbeCounter;
+        var down = new StepCommand(0, 0, -14, false);
+        var up = new StepCommand(0, 0, 14, false);
+
+        sim.Write(PacketEncoder.EncodeMove(PacketEncoder.ProbeHeader, down, down, down));
+        Assert.True(replies.TryTake(out var r1, 2000));
+        Assert.Equal(new byte[] { 1 }, r1);
+        Assert.Equal(start + 42, sim.ProbeCounter);   // bajar 42 pasos ⇒ +42
+
+        sim.Write(PacketEncoder.EncodeMove(PacketEncoder.ProbeHeader, up, up, up));
+        Assert.True(replies.TryTake(out _, 2000));
+        Assert.Equal(start, sim.ProbeCounter);        // subir con 0x3F lo regresa
+
+        sim.Write(PacketEncoder.EncodeMove(PacketEncoder.MoveHeader, up, down, up));
+        Assert.True(replies.TryTake(out _, 2000));
+        Assert.Equal(start - 42, sim.ProbeCounter);   // con 0xFF todo paso de Z resta
+    }
+
     private static async Task<MachineController> ConnectAsync()
     {
         var controller = new MachineController(new MachineSettings()) { SimulationMode = true };
