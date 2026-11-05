@@ -41,6 +41,10 @@ public sealed class MachineSettings
     /// </summary>
     public bool ProbeZReportInverted { get; set; } = false;
 
+    /// <summary>Recorrido útil de la mesa en X y Y (mm). Decide si una placa cabe y si hay que girarla 90° al generar desde Gerber.</summary>
+    public double TravelXMm { get; set; } = 100;
+    public double TravelYMm { get; set; } = 140;
+
     public int StepsPer10mm(Axis axis) => axis switch
     {
         Axis.X => StepsPer10mmX,

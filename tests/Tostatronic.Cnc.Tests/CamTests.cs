@@ -671,7 +671,13 @@ public class CamGenerationTests
         try
         {
             var board = BoardLoader.LoadZip(zip);
-            Assert.Empty(board.Warnings);
+            // sin avisos del parser; los de validación son legítimos: es de dos capas, la vía (12,60) cae en
+            // el hueco LPC de la cara inferior y el pad ovalado de 1.2 mm con barreno de 1.016 deja 0.09 de anillo
+            static bool EsDeValidacion(string w) =>
+                w.Contains("DOS capas") || w.Contains("fuera del cobre") || w.Contains("anillo de cobre");
+            Assert.True(board.Warnings.All(EsDeValidacion), string.Join(" | ", board.Warnings));
+            Assert.Contains(board.Warnings, w => w.Contains("DOS capas"));
+            Assert.False(board.IsSingleLayer);
             Assert.Equal(20.0, board.WidthMm, 3);
             Assert.Equal(15.0, board.HeightMm, 3);
             Assert.Equal(5.588, board.MinX, 3);
@@ -699,7 +705,7 @@ public class CamGenerationTests
             foreach (var face in new[] { BoardFace.Bottom, BoardFace.Top })
             {
                 var r = CamGenerator.Generate(board, face, new CamPreset());
-                Assert.Empty(r.Warnings);
+                Assert.True(r.Warnings.All(EsDeValidacion), string.Join(" | ", r.Warnings));
                 Assert.Equal(4, r.DrillCount);
                 Assert.Equal(3, r.DrillGroups.Count); // 0.8 (vía), 1.0 (1.016), 1.2
                 Assert.Equal(5, r.Files.Count);

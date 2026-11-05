@@ -105,6 +105,19 @@ se aplica también en los G00 en XY, y la calibración queda en pausa reanudable
   G85 de 0.006 mm (ahora un solo barreno en el centro) y la semántica LZ/TZ estaba invertida
   (solo afectaba a Excellon de otros CAD con ceros suprimidos). La prueba
   `CargaUnZipConLaEstructuraDeEasyEdaStd` reproduce esa estructura con geometría propia.
+- Validado (2026-11-04) con una exportación real de **Altium Designer** (placa de un alumno):
+  pulgadas con `FSTAX23Y23` (ceros FINALES omitidos), `G54Dnn`, D01/D03 modales sin repetir el
+  código, taladro como Gerber (`PTH_Drill.gbr`, cada flash es un barreno), archivos `Pads_*`,
+  `Legend_*`, `.apr/.REP/.RUL/.EXTREP` que hay que ignorar. Novedades a raíz de eso: cargador
+  con clasificación por nombre (EasyEDA, Altium, KiCad), **validaciones** (una/dos capas y cara
+  preferida, cobre suelto lejos de la placa descartado con aviso, puentes entre redes ubicados
+  en la vista previa, barrenos fuera del cobre, anillos delgados, contorno faltante → rectángulo
+  del cobre más margen configurable), **giro de 90°** automático/forzado/nunca contra el
+  recorrido de la máquina (`MachineSettings.TravelXMm/TravelYMm`, 100 × 140 por defecto),
+  reporte de validación junto a los .nc y **línea de comandos** (`Tostatronic.Cnc.Cli`). La
+  conversión se contrastó anillo por anillo contra una conversión independiente con shapely
+  (Hausdorff máximo 0.02 mm, barrenos a 0.001 mm; shapely deja 6 anillos degenerados de
+  0.008 mm de ancho dentro de letras que Clipper colapsa, correctamente).
 - Pendiente: probar en la máquina; el cambio de herramienta guiado entre trabajos (hoy son
   archivos separados, como el script); zoom/pan en la vista previa; mapa de alturas en colores.
 
@@ -120,10 +133,20 @@ se aplica también en los G00 en XY, y la calibración queda en pausa reanudable
 - Pruebas: la matemática de la transformación contra `bascula_cnc.py` (mismos puntos → misma
   rotación/desplazamiento/errores), incluido el volteo.
 
-### Fase E — Repaso y comodidades
-- Repaso: rectángulo sobre la vista previa → regenerar solo las pasadas de aislamiento dentro,
-  sin mover el origen, con opción de más profundidad (y aplicando el mapa de alturas vigente).
-- Pulido: atajos de teclado, historial de archivos, exportar .nc, chequeos previos al envío.
+### Fase E — Repaso y comodidades ✅ repaso (2026-11-04)
+- Repaso de pistas (`RepasoProgram` en Cam + `RepasoWindow`/`RepasoCanvas` en la app): lee un
+  `.nc` de aislamiento (el nuestro o los de los scripts) y lo separa en trayectorias por bajada;
+  clic para marcar anillos completos, Ctrl + arrastrar a lo largo de una trayectoria para una
+  sección (solo ese tramo, con el sentido que siguió el ratón; `RepasoSection` con parámetros
+  segmento+fracción, para pistas enormes de las que solo falla una parte), Shift + arrastrar
+  para zonas (de los no marcados y sin secciones solo sale lo que cae dentro, recorte
+  Liang–Barsky por segmento), profundidad propia, mismo encabezado /
+  origen / cierre que el original, orden por vecino más cercano, exportar o mandar a la máquina,
+  selección persistida en `<archivo>.nc.repaso.json`, fondo opcional. Es el mismo flujo que
+  `selector_repaso.html` del detector, ya dentro de la app y también por línea de comandos
+  (`tostatronic-cnc repaso archivo.nc --anillos 1,5 --zona x0,y0,x1,y1 --tramo N:x0,y0:x1,y1 --depth 0.12`).
+- Pendiente: aplicar el mapa de alturas vigente al repaso (hoy se recalibra o se corre sin mapa),
+  atajos de teclado, historial de archivos, chequeos previos al envío.
 
 ## 4. Pruebas automáticas
 

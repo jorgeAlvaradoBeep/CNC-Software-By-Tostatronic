@@ -1,0 +1,84 @@
+<Window x:Class="Tostatronic.Cnc.App.RepasoWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:Tostatronic.Cnc.App"
+        Title="Repaso de pistas — Tostatronic CNC"
+        Width="1200" Height="800" MinWidth="900" MinHeight="600"
+        Background="{StaticResource BgBrush}">
+    <Grid Margin="12">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="320"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="0,0,10,0">
+            <StackPanel>
+                <Border Style="{StaticResource PanelStyle}">
+                    <StackPanel>
+                        <TextBlock Text="ARCHIVO" Style="{StaticResource PanelTitle}"/>
+                        <StackPanel Orientation="Horizontal">
+                            <Button Content="Abrir .nc…" Style="{StaticResource AccentButton}" Click="Open_Click"/>
+                            <Button Content="Fondo…" Margin="8,0,0,0" Click="OpenBackground_Click"
+                                    ToolTip="Otro .nc (p. ej. el aislamiento completo) dibujado en gris, solo para ubicarse"/>
+                            <Button Content="Quitar fondo" Margin="8,0,0,0" Click="ClearBackground_Click"/>
+                        </StackPanel>
+                        <TextBlock x:Name="FileText" Text="Carga el .nc del aislamiento (el generado aquí, o el de pcb_cnc.py / detector_cnc.py)."
+                                   TextWrapping="Wrap" Margin="0,8,0,0" Foreground="{StaticResource MutedBrush}" FontSize="12"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource PanelStyle}" Margin="0,10,0,0">
+                    <StackPanel>
+                        <TextBlock Text="SELECCIÓN" Style="{StaticResource PanelTitle}"/>
+                        <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedBrush}"
+                                   Text="Clic: marcar / desmarcar una trayectoria completa. Arrastrar: mover. Rueda: zoom. Ctrl + arrastrar a lo largo de una trayectoria: sección (solo ese tramo; sirve para pistas enormes de las que hay que repasar una parte). Ctrl + clic en una sección: quitarla. Shift + arrastrar: zona (de las trayectorias NO marcadas y sin secciones solo sale lo que queda dentro). Shift + clic en una zona: quitarla."/>
+                        <WrapPanel Margin="0,8,0,0">
+                            <Button Content="Todas" Click="All_Click" Margin="0,0,6,6"/>
+                            <Button Content="Ninguna" Click="None_Click" Margin="0,0,6,6"/>
+                            <Button Content="Invertir" Click="Invert_Click" Margin="0,0,6,6"/>
+                            <Button Content="Quitar zonas" Click="ClearZones_Click" Margin="0,0,6,6"/>
+                            <Button Content="Quitar secciones" Click="ClearSections_Click" Margin="0,0,6,6"/>
+                            <Button Content="Ajustar vista" Click="Fit_Click" Margin="0,0,6,6"/>
+                        </WrapPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                            <TextBlock Text="Profundidad (mm):" VerticalAlignment="Center" Foreground="{StaticResource MutedBrush}" FontSize="12"/>
+                            <TextBox x:Name="DepthBox" Width="60" Margin="8,0,0,0" Padding="4,2" Text="0.12"
+                                     Background="#1A1B20" Foreground="{StaticResource TextBrush}" BorderBrush="#4A4B57"
+                                     LostFocus="Depth_Changed"/>
+                            <TextBlock x:Name="DepthHint" Text="" VerticalAlignment="Center" Margin="8,0,0,0"
+                                       Foreground="{StaticResource MutedBrush}" FontSize="11"/>
+                        </StackPanel>
+                        <TextBlock x:Name="SelText" Text="" Margin="0,8,0,0" FontFamily="Consolas" FontSize="12"
+                                   Foreground="{StaticResource AccentBrush}" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource PanelStyle}" Margin="0,10,0,0">
+                    <StackPanel>
+                        <TextBlock Text="EXPORTAR" Style="{StaticResource PanelTitle}"/>
+                        <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedBrush}"
+                                   Text="Sale un .nc con el mismo encabezado, origen y cierre que el archivo cargado (mismos ceros X0 Y0 Z0), solo con lo marcado, a la profundidad indicada. Antes de correrlo vuelve a tocar Z0 en el cobre."/>
+                        <Button Content="💾 Guardar _seleccion.nc" Margin="0,8,0,0" Height="34" Click="Export_Click"/>
+                        <Button Content="▶ Guardar y cargar en la máquina" Margin="0,8,0,0" Height="34"
+                                Style="{StaticResource AccentButton}" Click="ExportAndLoad_Click"/>
+                        <TextBlock x:Name="ExportText" Text="" Margin="0,8,0,0" FontSize="11" TextWrapping="Wrap"
+                                   Foreground="{StaticResource MutedBrush}"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <Border Grid.Column="1" Style="{StaticResource PanelStyle}">
+            <DockPanel>
+                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                    <TextBlock Text="TRAYECTORIAS (azul = sin marcar, naranja = marcada, rosa = sección, verde = zona)" Style="{StaticResource PanelTitle}" Margin="0"/>
+                    <TextBlock x:Name="StatusText" Text="" HorizontalAlignment="Right" FontFamily="Consolas" FontSize="12"
+                               Foreground="{StaticResource MutedBrush}"/>
+                </DockPanel>
+                <Border Background="#101216" CornerRadius="6" ClipToBounds="True">
+                    <local:RepasoCanvas x:Name="Canvas"/>
+                </Border>
+            </DockPanel>
+        </Border>
+    </Grid>
+</Window>

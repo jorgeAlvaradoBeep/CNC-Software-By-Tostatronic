@@ -2,11 +2,25 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="PCB desde Gerber — Tostatronic CNC"
-        Width="1150" Height="760" MinWidth="980" MinHeight="620"
+        Width="1200" Height="800" MinWidth="1000" MinHeight="640"
         Background="{StaticResource BgBrush}">
+    <Window.Resources>
+        <Style x:Key="FieldBox" TargetType="TextBox">
+            <Setter Property="Margin" Value="0,2"/>
+            <Setter Property="Padding" Value="4,2"/>
+            <Setter Property="Background" Value="#1A1B20"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="BorderBrush" Value="#4A4B57"/>
+        </Style>
+        <Style x:Key="FieldLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+    </Window.Resources>
     <Grid Margin="12">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="330"/>
+            <ColumnDefinition Width="350"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
@@ -22,13 +36,39 @@
                         </StackPanel>
                         <TextBlock Text="{Binding BoardInfo}" TextWrapping="Wrap" Margin="0,8,0,0"
                                    Foreground="{StaticResource MutedBrush}" FontSize="12"/>
-                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                            <TextBlock Text="Cara:" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <ComboBox Width="190" SelectedIndex="{Binding FaceIndex}">
+                        <Grid Margin="0,10,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition/><RowDefinition/><RowDefinition/><RowDefinition/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Text="Cara:" Style="{StaticResource FieldLabel}" Margin="0,0,8,0"/>
+                            <ComboBox Grid.Column="1" SelectedIndex="{Binding FaceIndex}" Margin="0,2">
                                 <ComboBoxItem Content="Inferior (espejo, cobre arriba)"/>
-                                <ComboBoxItem Content="Superior"/>
+                                <ComboBoxItem Content="Superior (sin espejo)"/>
                             </ComboBox>
-                        </StackPanel>
+                            <TextBlock Grid.Row="1" Text="Orientación:" Style="{StaticResource FieldLabel}" Margin="0,0,8,0"/>
+                            <ComboBox Grid.Row="1" Grid.Column="1" SelectedIndex="{Binding OrientationIndex}" Margin="0,2">
+                                <ComboBoxItem Content="Automática (gira 90° solo si no cabe)"/>
+                                <ComboBoxItem Content="Sin girar"/>
+                                <ComboBoxItem Content="Girada 90°"/>
+                            </ComboBox>
+                            <TextBlock Grid.Row="2" Text="Recorrido CNC (mm):" Style="{StaticResource FieldLabel}" Margin="0,0,8,0"/>
+                            <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal">
+                                <TextBlock Text="X" Style="{StaticResource FieldLabel}" Margin="0,0,4,0"/>
+                                <TextBox Width="52" Style="{StaticResource FieldBox}" Text="{Binding TravelXMm, UpdateSourceTrigger=LostFocus}"/>
+                                <TextBlock Text="Y" Style="{StaticResource FieldLabel}" Margin="10,0,4,0"/>
+                                <TextBox Width="52" Style="{StaticResource FieldBox}" Text="{Binding TravelYMm, UpdateSourceTrigger=LostFocus}"/>
+                            </StackPanel>
+                            <TextBlock Grid.Row="3" Text="Sin contorno, margen (mm):" Style="{StaticResource FieldLabel}" Margin="0,0,8,0"/>
+                            <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal">
+                                <TextBox Width="52" Style="{StaticResource FieldBox}" Text="{Binding OutlineMarginMm, UpdateSourceTrigger=LostFocus}"/>
+                            </StackPanel>
+                        </Grid>
+                        <CheckBox Content="Descartar cobre suelto lejos de la placa" Margin="0,6,0,0" FontSize="12"
+                                  IsChecked="{Binding DropStrayCopper}"/>
                     </StackPanel>
                 </Border>
 
@@ -39,18 +79,8 @@
                                   DisplayMemberPath="Name"/>
                         <Grid Margin="0,10,0,0">
                             <Grid.Resources>
-                                <Style TargetType="TextBox">
-                                    <Setter Property="Margin" Value="0,2"/>
-                                    <Setter Property="Padding" Value="4,2"/>
-                                    <Setter Property="Background" Value="#1A1B20"/>
-                                    <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
-                                    <Setter Property="BorderBrush" Value="#4A4B57"/>
-                                </Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
-                                    <Setter Property="VerticalAlignment" Value="Center"/>
-                                    <Setter Property="FontSize" Value="12"/>
-                                </Style>
+                                <Style TargetType="TextBox" BasedOn="{StaticResource FieldBox}"/>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource FieldLabel}"/>
                             </Grid.Resources>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
@@ -114,13 +144,16 @@
                             <TextBox Text="{Binding OutputFolder, UpdateSourceTrigger=PropertyChanged}" Padding="4,4" Margin="0,0,6,0"
                                      Background="#1A1B20" Foreground="{StaticResource TextBrush}" BorderBrush="#4A4B57"/>
                         </DockPanel>
-                        <Button Content="💾 Guardar archivos" Margin="0,8,0,0" Height="34"
-                                Command="{Binding SaveFilesCommand}" IsEnabled="{Binding HasBoard}"/>
+                        <Button Content="💾 Guardar archivos (+ reporte)" Margin="0,8,0,0" Height="34"
+                                Command="{Binding SaveFilesCommand}" IsEnabled="{Binding HasResult}"/>
                         <ListBox ItemsSource="{Binding GeneratedFiles}" SelectedItem="{Binding SelectedFile}"
                                  MaxHeight="110" Margin="0,8,0,0" Background="#141519"
                                  Foreground="#C9CAD3" BorderThickness="0" FontSize="11" FontFamily="Consolas"/>
                         <Button Content="▶ Cargar el seleccionado en la máquina" Margin="0,8,0,0" Height="34"
                                 Style="{StaticResource AccentButton}" Command="{Binding LoadIntoMachineCommand}"/>
+                        <Button Content="✎ Repaso de pistas de este aislamiento…" Margin="0,8,0,0" Height="34"
+                                Command="{Binding OpenRepasoCommand}" IsEnabled="{Binding HasResult}"
+                                ToolTip="Elige a mano qué anillos o zonas volver a fresar si algo no salió bien"/>
                     </StackPanel>
                 </Border>
             </StackPanel>
@@ -129,21 +162,37 @@
         <!-- vista previa -->
         <Border Grid.Column="1" Style="{StaticResource PanelStyle}">
             <DockPanel>
-                <TextBlock DockPanel.Dock="Top" Text="VISTA PREVIA (como se ve sobre la CNC)" Style="{StaticResource PanelTitle}"/>
+                <TextBlock DockPanel.Dock="Top" Text="VISTA PREVIA (como se ve sobre la CNC; × rojas = redes que quedarán unidas)" Style="{StaticResource PanelTitle}"/>
                 <TextBlock DockPanel.Dock="Bottom" Text="{Binding ResultInfo}" Foreground="{StaticResource MutedBrush}"
-                           FontSize="12" Margin="0,8,0,0"/>
-                <TextBlock DockPanel.Dock="Bottom" Text="{Binding WarningsText}" Foreground="{StaticResource WarnBrush}"
-                           FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock">
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding WarningsText}" Value="">
-                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TextBlock.Style>
-                </TextBlock>
+                           FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap"/>
+                <ScrollViewer DockPanel.Dock="Bottom" MaxHeight="150" VerticalScrollBarVisibility="Auto" Margin="0,8,0,0">
+                    <StackPanel>
+                        <TextBlock Text="{Binding WarningsText}" Foreground="{StaticResource WarnBrush}"
+                                   FontSize="12" TextWrapping="Wrap">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding WarningsText}" Value="">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Text="{Binding InfoText}" Foreground="{StaticResource MutedBrush}"
+                                   FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding InfoText}" Value="">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </ScrollViewer>
                 <Border Background="#101216" CornerRadius="6" ClipToBounds="True">
                     <Viewbox Stretch="Uniform" Margin="10">
                         <Canvas x:Name="PreviewCanvas"/>

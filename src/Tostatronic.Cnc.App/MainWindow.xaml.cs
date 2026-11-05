@@ -1,4 +1,5 @@
 ﻿using System.Globalization;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -20,6 +21,23 @@ public partial class MainWindow : Window
             if (ConsoleList.Items.Count > 0)
                 ConsoleList.ScrollIntoView(ConsoleList.Items[^1]);
         };
+        Loaded += (_, _) => HandleStartupArgs(App.StartupArgs);
+    }
+
+    private void HandleStartupArgs(string[] args)
+    {
+        if (args.Length == 0) return;
+        if (args[0].Equals("--repaso", StringComparison.OrdinalIgnoreCase))
+        {
+            var w = new RepasoWindow(_vm) { Owner = this };
+            w.Show();
+            if (args.Length > 1 && File.Exists(args[1]))
+                w.LoadFromText(File.ReadAllText(args[1]), Path.GetFileName(args[1]), Path.GetFullPath(args[1]));
+        }
+        else if (File.Exists(args[0]))
+        {
+            _vm.LoadProgramFromPath(Path.GetFullPath(args[0]));
+        }
     }
 
     private static (Axis Axis, int Dir)? ParseJogTag(object? tag) => (tag as string) switch
@@ -95,6 +113,11 @@ public partial class MainWindow : Window
     private void OpenCam_Click(object sender, RoutedEventArgs e)
     {
         new CamWindow(_vm) { Owner = this }.Show();
+    }
+
+    private void OpenRepaso_Click(object sender, RoutedEventArgs e)
+    {
+        new RepasoWindow(_vm) { Owner = this }.Show();
     }
 
     private void Window_Closing(object? sender, System.ComponentModel.CancelEventArgs e)

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>tostatronic-cnc</AssemblyName>
+    <RootNamespace>Tostatronic.Cnc.Cli</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Tostatronic.Cnc.Core\Tostatronic.Cnc.Core.csproj" />
+    <ProjectReference Include="..\Tostatronic.Cnc.Cam\Tostatronic.Cnc.Cam.csproj" />
+  </ItemGroup>
+
+</Project>

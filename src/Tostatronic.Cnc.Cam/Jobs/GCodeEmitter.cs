@@ -22,6 +22,8 @@ internal static class GCodeEmitter
         g.AppendLine(r.Face == BoardFace.Bottom
             ? "( mm, GRBL. X0 Y0 = esquina inf-izq vista desde el cobre. Z0 = cobre )"
             : "( mm, GRBL. X0 Y0 = esquina inf-izq de la placa, cara superior. Z0 = cobre )");
+        if (r.Rotated)
+            g.AppendLine($"( Placa girada 90 grados: {r.WidthMm.ToString("0.0", Inv)} mm en X por {r.HeightMm.ToString("0.0", Inv)} mm en Y )");
         foreach (var e in extra)
             g.AppendLine($"( {e} )");
         g.AppendLine("G21 G90 G17 G94");

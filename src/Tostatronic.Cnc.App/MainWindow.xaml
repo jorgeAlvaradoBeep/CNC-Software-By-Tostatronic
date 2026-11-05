@@ -1,4 +1,4 @@
-﻿<Window x:Class="Tostatronic.Cnc.App.MainWindow"
+<Window x:Class="Tostatronic.Cnc.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Tostatronic PCB CNC"
@@ -169,6 +169,7 @@
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
                         <Button Content="Cargar G-code…" Command="{Binding LoadCommand}"/>
                         <Button Content="PCB desde Gerber…" Margin="8,0,0,0" Click="OpenCam_Click"/>
+                        <Button Content="Repaso de pistas…" Margin="8,0,0,0" Click="OpenRepaso_Click" ToolTip="Volver a fresar solo los anillos o zonas que no salieron bien"/>
                         <TextBlock Text="{Binding FileName}" VerticalAlignment="Center" Margin="12,0,0,0" FontWeight="SemiBold"/>
                     </StackPanel>
                     <TextBlock DockPanel.Dock="Top" Text="{Binding FileInfo}" Foreground="{StaticResource MutedBrush}"

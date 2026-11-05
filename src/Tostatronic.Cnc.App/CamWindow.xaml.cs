@@ -8,13 +8,21 @@ namespace Tostatronic.Cnc.App;
 public partial class CamWindow : Window
 {
     private readonly CamViewModel _vm;
+    private readonly MainViewModel _main;
 
     public CamWindow(MainViewModel main)
     {
         InitializeComponent();
+        _main = main;
         _vm = new CamViewModel(main);
         DataContext = _vm;
         _vm.ResultChanged += () => Dispatcher.BeginInvoke(RenderPreview);
+        _vm.RepasoRequested += (content, name, savedPath) =>
+        {
+            var w = new RepasoWindow(_main) { Owner = this };
+            w.Show();
+            w.LoadFromText(content, name, savedPath);
+        };
     }
 
     private const double Pad = 4.0; // mm alrededor de la placa
@@ -41,8 +49,8 @@ public partial class CamWindow : Window
             Width = w,
             Height = h,
             Fill = new SolidColorBrush(Color.FromRgb(0x14, 0x2A, 0x1E)),
-            Stroke = new SolidColorBrush(Color.FromRgb(0x2A, 0x4A, 0x36)),
-            StrokeThickness = 0.1,
+            Stroke = new SolidColorBrush(r.FitsMachine ? Color.FromRgb(0x2A, 0x4A, 0x36) : Color.FromRgb(0xE5, 0x39, 0x35)),
+            StrokeThickness = r.FitsMachine ? 0.1 : 0.4,
         };
         System.Windows.Controls.Canvas.SetLeft(board, X(0));
         System.Windows.Controls.Canvas.SetTop(board, Y(h));
@@ -123,6 +131,25 @@ public partial class CamWindow : Window
             StrokeThickness = 0.06,
         });
 
+        // puentes: donde dos redes quedan más cerca que la herramienta
+        if (r.Bridges.Count > 0)
+        {
+            var bridgeGeo = new GeometryGroup();
+            foreach (var b in r.Bridges)
+            {
+                bridgeGeo.Children.Add(new LineGeometry(new Point(X(b.x - 1.2), Y(b.y - 1.2)), new Point(X(b.x + 1.2), Y(b.y + 1.2))));
+                bridgeGeo.Children.Add(new LineGeometry(new Point(X(b.x - 1.2), Y(b.y + 1.2)), new Point(X(b.x + 1.2), Y(b.y - 1.2))));
+                bridgeGeo.Children.Add(new EllipseGeometry(new Point(X(b.x), Y(b.y)), 1.8, 1.8));
+            }
+            bridgeGeo.Freeze();
+            PreviewCanvas.Children.Add(new Path
+            {
+                Data = bridgeGeo,
+                Stroke = new SolidColorBrush(Color.FromRgb(0xFF, 0x3B, 0x30)),
+                StrokeThickness = 0.3,
+            });
+        }
+
         // origen X0 Y0
         var cross = new GeometryGroup();
         cross.Children.Add(new LineGeometry(new Point(X(-2), Y(0)), new Point(X(2), Y(0))));
@@ -136,5 +163,3 @@ public partial class CamWindow : Window
         });
     }
 }
-
-

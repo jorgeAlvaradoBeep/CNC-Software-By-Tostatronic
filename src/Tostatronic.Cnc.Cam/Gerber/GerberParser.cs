@@ -6,19 +6,35 @@ namespace Tostatronic.Cnc.Cam.Gerber;
 /// <summary>Resultado de parsear una capa Gerber: el relleno (cobre/contorno) ya unido.</summary>
 public sealed class GerberImage
 {
-    /// <summary>PolÃ­gonos rellenos (unidades de Clipper), con polaridad aplicada.</summary>
+    /// <summary>Polígonos rellenos (unidades de Clipper), con polaridad aplicada.</summary>
     public Paths64 Filled { get; internal set; } = new();
 
     /// <summary>Trazos crudos (segmentos en mm), para encadenar contornos de placa.</summary>
     public List<(PointD A, PointD B)> Segments { get; } = new();
 
+    /// <summary>Flashes D03 (pads) en mm: centro, tipo de apertura (C/R/O/P/M) y tamaño.</summary>
+    public List<GerberFlash> Flashes { get; } = new();
+
+    /// <summary>Regiones G36/G37 cerradas (rellenos de cobre).</summary>
+    public int RegionCount { get; internal set; }
+
+    /// <summary>¿La capa dibuja algo además de flashes (pistas o regiones)?</summary>
+    public bool HasTraces => Segments.Count > 0 || RegionCount > 0;
+
     public List<string> Warnings { get; } = new();
 }
 
+/// <summary>Un flash (pad) ya en mm: centro, tipo de apertura y tamaño (W = H para círculos).</summary>
+public readonly record struct GerberFlash(double X, double Y, char Kind, double W, double H)
+{
+    /// <summary>Lado menor del pad (diámetro en los círculos).</summary>
+    public double MinSize => Math.Min(W, H);
+}
+
 /// <summary>
-/// Parser de Gerber RS-274X (el formato de fabricaciÃ³n que exporta EasyEDA y cualquier CAD):
-/// formato FS, unidades MO, aperturas estÃ¡ndar C/R/O/P y macros AM (primitivas 1, 4, 5, 7,
-/// 20 y 21, con variables y aritmÃ©tica), trazos G01, arcos G02/G03 (G75 y aproximaciÃ³n G74),
+/// Parser de Gerber RS-274X (el formato de fabricación que exporta EasyEDA y cualquier CAD):
+/// formato FS, unidades MO, aperturas estándar C/R/O/P y macros AM (primitivas 1, 4, 5, 7,
+/// 20 y 21, con variables y aritmética), trazos G01, arcos G02/G03 (G75 y aproximación G74),
 /// flashes D03, regiones G36/G37 y polaridad LPD/LPC. Lo que no conoce lo reporta en
 /// Warnings en lugar de fallar.
 /// </summary>
@@ -40,9 +56,10 @@ public sealed class GerberParser
     private Aperture? _current;
     private long _x, _y;
     private bool _hasPos;
+    private int _lastOp = 1;             // código D modal (archivos viejos: "X..Y..*" repite el último D0n)
 
-    private Paths64 _batch = new();      // geometrÃ­a pendiente con la polaridad actual
-    private Path64 _contour = new();     // contorno de regiÃ³n en construcciÃ³n
+    private Paths64 _batch = new();      // geometría pendiente con la polaridad actual
+    private Path64 _contour = new();     // contorno de región en construcción
 
     private string? _pendingMacro;       // macro AM cuyo cuerpo sigue llegando
 
@@ -104,7 +121,7 @@ public sealed class GerberParser
     {
         if (cmd.Length == 0) return;
 
-        // cuerpo de una macro AM: lÃ­neas que siguen al %AMNOMBRE dentro del mismo bloque
+        // cuerpo de una macro AM: líneas que siguen al %AMNOMBRE dentro del mismo bloque
         if (!firstOfBlock && _pendingMacro != null)
         {
             _macros[_pendingMacro].Add(cmd);
@@ -175,7 +192,7 @@ public sealed class GerberParser
             _apertures[num] = new Aperture('M', args, name);
         else
         {
-            Warn($"Apertura D{num} usa la macro desconocida '{name}'; se trata como cÃ­rculo pequeÃ±o.");
+            Warn($"Apertura D{num} usa la macro desconocida '{name}'; se trata como círculo pequeño.");
             _apertures[num] = new Aperture('C', args.Length > 0 ? args : new[] { 0.1 }, null);
         }
     }
@@ -210,7 +227,7 @@ public sealed class GerberParser
         if (w.Length == 0) return;
         if (w[0] == 'M') return; // M00/M01/M02: fin
 
-        // selecciÃ³n de apertura pura: D10, D11â€¦
+        // selección de apertura pura: D10, D11…
         if (w[0] == 'D' && !w.Contains('X') && !w.Contains('Y') && !w.Contains('I') && !w.Contains('J'))
         {
             int code = int.Parse(w[1..]);
@@ -221,6 +238,7 @@ public sealed class GerberParser
             }
             else
             {
+                _lastOp = code;
                 Operate(code, _x, _y, 0, 0, hasIJ: false);
             }
             return;
@@ -237,7 +255,7 @@ public sealed class GerberParser
             while (k < w.Length && (char.IsDigit(w[k]) || w[k] is '+' or '-' or '.')) k++;
             string num = w[start..k];
             if (num.Length == 0) continue;
-            if (key == 'D') { op = int.Parse(num); continue; }
+            if (key == 'D') { op = int.Parse(num); _lastOp = op; continue; }
             long val = ParseCoord(num);
             switch (key)
             {
@@ -248,7 +266,7 @@ public sealed class GerberParser
                 default: Warn($"Dato Gerber desconocido '{key}' (se ignora)."); break;
             }
         }
-        if (op < 0) op = 1; // D01 modal implÃ­cito (archivos viejos)
+        if (op < 0) op = _lastOp; // sin D0n: el último código de operación sigue vigente (RS-274D / Altium)
         Operate(op, x, y, iOfs, jOfs, hasIJ);
     }
 
@@ -273,11 +291,11 @@ public sealed class GerberParser
                 CloseRegionContour();
                 break;
             case 3: // flash
-                if (_inRegion) Warn("Flash dentro de regiÃ³n: se ignora.");
+                if (_inRegion) Warn("Flash dentro de región: se ignora.");
                 else Flash(x, y);
                 break;
             case 1: // dibujar
-                if (!_hasPos) break; // sin posiciÃ³n previa: actÃºa como move
+                if (!_hasPos) break; // sin posición previa: actúa como move
                 if (_interp == 1 || !hasIJ)
                 {
                     if (_interp != 1 && !hasIJ) Warn("Arco sin I/J: se traza recto.");
@@ -347,7 +365,7 @@ public sealed class GerberParser
         return (bx, by);
     }
 
-    /// <summary>Puntos del arco (sin incluir el inicio). Inicio == fin â‡’ cÃ­rculo completo.</summary>
+    /// <summary>Puntos del arco (sin incluir el inicio). Inicio == fin ⇒ círculo completo.</summary>
     private static List<(double x, double y)> TessellateArc(double x0, double y0, double x1, double y1,
         double cx, double cy, bool clockwise)
     {
@@ -373,6 +391,15 @@ public sealed class GerberParser
         if (_current == null) { Warn("Flash sin apertura seleccionada."); return; }
         double cx = Geo.Mm(x), cy = Geo.Mm(y);
         var ap = _current;
+        if (ap.Kind == 'M')
+        {
+            double mw = ap.Args.Length > 0 ? ap.Args[0] * _unit : 0;
+            _img.Flashes.Add(new GerberFlash(cx, cy, 'M', mw, ap.Args.Length > 1 ? ap.Args[1] * _unit : mw));
+        }
+        else
+        {
+            _img.Flashes.Add(new GerberFlash(cx, cy, ap.Kind, ap.W * _unit, ap.H * _unit));
+        }
         // las dimensiones de las aperturas estándar vienen en las unidades del archivo
         Paths64 shape = ap.Kind switch
         {
@@ -435,7 +462,7 @@ public sealed class GerberParser
             }
             catch (Exception)
             {
-                Warn($"ExpresiÃ³n de macro '{macroName}' no entendida: '{line}'.");
+                Warn($"Expresión de macro '{macroName}' no entendida: '{line}'.");
                 continue;
             }
             int code = (int)f[0];
@@ -462,18 +489,18 @@ public sealed class GerberParser
         double U(double v) => v * _unit;
         switch (code)
         {
-            case 1: // cÃ­rculo: 1, exp, diÃ¡m, cx, cy [, rot]
+            case 1: // círculo: 1, exp, diám, cx, cy [, rot]
             {
                 double rot = f.Length > 5 ? f[5] : 0;
                 var (px, py) = Geo.Rotate(U(f[3]), U(f[4]), rot);
                 return new Paths64 { Geo.Circle(px, py, U(f[2]) / 2) };
             }
-            case 20: // lÃ­nea vector: 20, exp, ancho, x1, y1, x2, y2, rot
+            case 20: // línea vector: 20, exp, ancho, x1, y1, x2, y2, rot
             {
                 double rot = f.Length > 7 ? f[7] : 0;
                 var (x1, y1) = Geo.Rotate(U(f[3]), U(f[4]), rot);
                 var (x2, y2) = Geo.Rotate(U(f[5]), U(f[6]), rot);
-                // extremos cuadrados: rectÃ¡ngulo explÃ­cito
+                // extremos cuadrados: rectángulo explícito
                 double dxl = x2 - x1, dyl = y2 - y1;
                 double len = double.Hypot(dxl, dyl);
                 if (len < 1e-9) return new Paths64();
@@ -485,7 +512,7 @@ public sealed class GerberParser
                     Geo.Pt(x2 - nx, y2 - ny), Geo.Pt(x1 - nx, y1 - ny),
                 } };
             }
-            case 21: // lÃ­nea centrada: 21, exp, ancho, alto, cx, cy, rot
+            case 21: // línea centrada: 21, exp, ancho, alto, cx, cy, rot
             {
                 double rot = f.Length > 6 ? f[6] : 0;
                 var rect = new Path64(4);
@@ -498,7 +525,7 @@ public sealed class GerberParser
                 }
                 return new Paths64 { rect };
             }
-            case 4: // contorno: 4, exp, n, x0, y0, x1, y1, â€¦, rot
+            case 4: // contorno: 4, exp, n, x0, y0, x1, y1, …, rot
             {
                 int n = (int)f[2];
                 int last = 3 + 2 * (n + 1);
@@ -511,7 +538,7 @@ public sealed class GerberParser
                 }
                 return new Paths64 { path };
             }
-            case 5: // polÃ­gono regular: 5, exp, n, cx, cy, diÃ¡m, rot
+            case 5: // polígono regular: 5, exp, n, cx, cy, diám, rot
             {
                 int n = Math.Max(3, (int)f[2]);
                 double rot = f.Length > 6 ? f[6] : 0;
@@ -525,7 +552,7 @@ public sealed class GerberParser
                 }
                 return new Paths64 { path };
             }
-            case 7: // tÃ©rmico: 7, cx, cy, diÃ¡m ext, diÃ¡m int, grosor cruz, rot
+            case 7: // térmico: 7, cx, cy, diám ext, diám int, grosor cruz, rot
             {
                 double cx = U(f[1]), cy = U(f[2]);
                 double rot = f.Length > 6 ? f[6] : 0;
@@ -547,7 +574,7 @@ public sealed class GerberParser
         }
     }
 
-    // ---- acumulaciÃ³n con polaridad ----
+    // ---- acumulación con polaridad ----
 
     private void AddBatch(Paths64 shape) => _batch.AddRange(shape);
 
@@ -559,6 +586,7 @@ public sealed class GerberParser
             if (!Clipper.IsPositive(contour))
                 contour.Reverse();
             AddBatch(new Paths64 { contour });
+            _img.RegionCount++;
         }
         _contour = new Path64();
     }
